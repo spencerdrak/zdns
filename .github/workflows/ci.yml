@@ -2,7 +2,7 @@ name: CI
 on:
   push:
     branches:
-      - feature/auto-versioning
+      - master
   pull_request:
     branches:
       - master
@@ -48,5 +48,5 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         default_bump: patch
         default_prerelease_bump: patch
-        release_branches: feature/auto-versioning
+        release_branches: master
 
