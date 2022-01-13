@@ -6,12 +6,14 @@ NOTE: This document is a draft and still being updated, revised, edited, etc. If
 
 - Use `spf13/cobra` as CLI framework
     - This will help with gathering the options from the command line and then passing them to the CLI. It won't have much to do with the refactoring of the library itself.
-    - This will also help with reducing some of the error checking that goes on in `main.go` currently. 
+    - This will also help with reducing some of the error checking that goes on in `main.go` currently.
+    - The CLI will serve as the proof of concept to ensure that our changes to the API are sensible and work properly.
 - Migrate all packages from `modules` to `pkg` directory
     - We'll do a few things to ensure a cleaner end user experience:
         - decouple our logic from the logic of any deps that we use (e.g., this will likely require some work on the miekg/dns side of things)
         - explicitly version our deps
     - As I perform this migration, I'll determine and consult the team as needed on what should live where. Majority of this functionality will go into `pkg` but I think there are some pieces that will end up in `internal`.
+- Upgrade `dns` and `zdns` to Go 1.17
 
 ### External API
 
@@ -24,7 +26,7 @@ The libary will receive some sort of configuration object, run the tasks, and th
 - Easier to test
 - Easier to read/understand
 
-The library will accept a modified `Lookup` interface and will then return the results of the lookup. Depending on the structure, we may want to use Go 1.18's generics here, but I'll likely not know for sure until I'm deeper into the refactoring. The idea here is that the user (CLI or otherwise) will just have create an struct that satisfies this object, pass it through to the library and the library will handle the rest. The library will likely only have a few (or one) functions, I envision the following:
+The library will accept a modified `Lookup` interface and will then return the results of the lookup. I don't believe we'll need any generics support, so the bump to Go 1.17 that's mostly been completed should be sufficient. The idea here is that the user (CLI or otherwise) will just have create an struct that satisfies this object, pass it through to the library and the library will handle the rest. The library will likely only have a few (or one) functions, I envision the following:
 
 - `DoLookup` - takes the interface and runs the lookup(s) specified within.
 
@@ -38,7 +40,9 @@ The `Lookup` interface described above will contain the options and parameters t
 - clean method of passing parameters
 
 ## CI Changes
-- Remain with GitHub Actions. Continue to expand testing and checks to include useful info for PRs as well as checks before merging.
+- Remain with GitHub Actions. Continue to expand testing and checks to include useful info for PRs as well as checks before merging. A few other options that we might consider:
+    - checking test coverage
+    - code scanning
 
 ## Versioning System
 - Each PR into master gets a new subminor (patch) version. For example, v1.0.1 -> v1.0.2 after a successful PR. 
@@ -62,11 +66,8 @@ We may or may not be able to do this, however, I'll speak with the team on this 
 ## Testing Changes
 
 - Increase quanitity and quality of tests 
-- I imagine three types of tests
+- I imagine expanding the two types of tests currently existing in the repo
     - Unit tests: Test each function/file. 
         - Investigate code coverage for this
-    - Integration tests: I envision this primarily serving the purpose of ensuring _completeness_ but not necessarily _correctness_. By this I mean that our integration tests will ensure the system doesn't break, but maybe not that it handles every single edge case.
-        - This might be a suitable place to poll a third-party DNS like Google's DNS or something similar.
-    - E2E or System tests: These will check our correctness.
-        - I'm thinking of a somewhat extension testing framework. Idea being that we somehow (maybe into K8s) deploy our own `bind` server and then via some kind of config file ensure that it responds (or doesn't respond) in the correct way.
-    - Regression tests: These tests would ideally be run on a nightly or weekly basis. They'll be the most expensive and long-running, thus, we won't want to run them each time, but we should have a suite of them.
+    - Integration tests: These tests currently poll Google DNS to check the correctness of the tool. We're going to investigate expanding this as a framework for testing. One initial idea was to stand up our own bind server, but, if we can manipulate this easily enough, then we won't need to mess around with spinning up/maintaining our own server at all. 
+    - I'll be working with Vishal to develop each of these tests
