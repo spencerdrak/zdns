@@ -11,9 +11,20 @@
 
 This section will likely change, however, it's what the current vision will be. No plan survives first contact, but, failing to plan is planning to fail.
 
+The libary will receive some sort of configuration object, run the tasks, and then exit. All of the goroutines spawned within a call to the library must be terminated within that same call. This contains the asynchronous behavior to a single function, providing these benefits:
+- Eliminating data races
+- Clean interface boundary
+- Easier to test
+- Easier to read/understand
+
+The library will accept a modified `Lookup` interface and will then return the results of the lookup. Depending on the structure, we may want to use Go 1.18's generics here, but I'll likely not know for sure until I'm deeper into the refactoring. The idea here is that the user (CLI or otherwise) will just have create an struct that satisfies this object, pass it through to the library and the library will handle the rest. The library will likely only have a few functions, I envision the following:
+
+- `DoLookup` - takes the interface and runs the lookup(s) specified within.
+
+The packages that currently live in `modules` will be moved into the `pkg` directory to follow a more standardized go structure. Some functionality may be moved to `internal` to prevent use by library consumers. 
 
 ## Likely Sticking points
-- clean ways of concurrency in the library
+- clean ways of handling concurrency in the library
 - clean shutdown of goroutines
 
 # CI Changes
@@ -25,6 +36,7 @@ This section will likely change, however, it's what the current vision will be. 
 - At any point, we can deploy a new minor or major version - the CI actions will just take the latest and go from there.
 - `zmap/dns` will require a bit of a different versioning scheme. 
     - My recommendation is to follow the same scheme as `miekg/dns`, even if we are missing big chunks. This'll make it clearer to us and others what we're basing off of.
+    - It may also make sense to vendor our own version of miekg/dns, to make the project go-gettable
 
 # Deployment options
 - Vishal mentioned that we want to run this from several vantage points. This means we'll want portability, and to not have to deal with rebuilding each time.
