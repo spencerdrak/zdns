@@ -23,10 +23,10 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/miekg/dns"
+	"github.com/spencerdrak/zdns"
+	"github.com/spencerdrak/zdns/modules/miekg"
+	"github.com/spencerdrak/zdns/modules/nslookup"
 	"github.com/zmap/go-iptree/blacklist"
-	"github.com/zmap/zdns"
-	"github.com/zmap/zdns/modules/miekg"
-	"github.com/zmap/zdns/modules/nslookup"
 )
 
 // Per Connection Lookup ======================================================

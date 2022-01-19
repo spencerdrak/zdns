@@ -19,8 +19,8 @@ import (
 	"testing"
 
 	"github.com/miekg/dns"
-	"github.com/zmap/zdns"
-	"github.com/zmap/zdns/modules/miekg"
+	"github.com/spencerdrak/zdns"
+	"github.com/spencerdrak/zdns/modules/miekg"
 )
 
 // Mock the actual Miekg lookup.

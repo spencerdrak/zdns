@@ -2,7 +2,7 @@ ZDNS
 ====
 
 [![Build Status](https://travis-ci.org/zmap/zdns.svg?branch=master)](https://travis-ci.org/zmap/zdns)
-[![Go Report Card](https://goreportcard.com/badge/github.com/zmap/zdns)](https://goreportcard.com/report/github.com/zmap/zdns)
+[![Go Report Card](https://goreportcard.com/badge/github.com/spencerdrak/zdns)](https://goreportcard.com/report/github.com/spencerdrak/zdns)
 
 ZDNS is a command-line utility that provides high-speed DNS lookups. ZDNS is
 written in Go and contains its own recursive resolution code and a cache
@@ -20,7 +20,7 @@ Install
 
 ZDNS can be installed by checking out the repository and running `go build`.
 
-	git clone https://github.com/zmap/zdns.git
+	git clone https://github.com/spencerdrak/zdns.git
 	cd zdns/zdns
 	go build
 

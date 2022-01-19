@@ -26,17 +26,17 @@ import (
 
 	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
-	"github.com/zmap/zdns"
-	_ "github.com/zmap/zdns/modules/alookup"
-	_ "github.com/zmap/zdns/modules/axfr"
-	_ "github.com/zmap/zdns/modules/bindversion"
-	_ "github.com/zmap/zdns/modules/dmarc"
-	_ "github.com/zmap/zdns/modules/miekg"
-	_ "github.com/zmap/zdns/modules/mxlookup"
-	_ "github.com/zmap/zdns/modules/nslookup"
-	_ "github.com/zmap/zdns/modules/spf"
+	"github.com/spencerdrak/zdns"
+	_ "github.com/spencerdrak/zdns/modules/alookup"
+	_ "github.com/spencerdrak/zdns/modules/axfr"
+	_ "github.com/spencerdrak/zdns/modules/bindversion"
+	_ "github.com/spencerdrak/zdns/modules/dmarc"
+	_ "github.com/spencerdrak/zdns/modules/miekg"
+	_ "github.com/spencerdrak/zdns/modules/mxlookup"
+	_ "github.com/spencerdrak/zdns/modules/nslookup"
+	_ "github.com/spencerdrak/zdns/modules/spf"
 
-	"github.com/zmap/zdns/iohandlers"
+	"github.com/spencerdrak/zdns/iohandlers"
 )
 
 func main() {

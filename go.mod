@@ -1,4 +1,4 @@
-module github.com/zmap/zdns
+module github.com/spencerdrak/zdns
 
 go 1.13
 
