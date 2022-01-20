@@ -7,6 +7,6 @@ require (
 	github.com/hashicorp/go-version v1.2.0
 	github.com/liip/sheriff v0.0.0-20190308094614-91aa83a45a3d
 	github.com/sirupsen/logrus v1.4.2
-	github.com/spencerdrak/dns v0.0.2
+	github.com/spencerdrak/dns v1.1.45-spencerdrak-dns
 	github.com/zmap/go-iptree v0.0.0-20170831022036-1948b1097e25
 )
