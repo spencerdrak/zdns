@@ -15,7 +15,7 @@
 package dmarc
 
 import (
-	"github.com/miekg/dns"
+	"github.com/spencerdrak/dns"
 	"github.com/spencerdrak/zdns"
 	"github.com/spencerdrak/zdns/modules/miekg"
 )

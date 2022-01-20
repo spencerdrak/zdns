@@ -10,7 +10,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/miekg/dns"
+	"github.com/spencerdrak/dns"
 	"github.com/spencerdrak/zdns"
 	"github.com/zmap/go-iptree/blacklist"
 )
