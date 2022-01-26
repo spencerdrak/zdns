@@ -24,8 +24,8 @@ import (
 
 	"github.com/hashicorp/go-version"
 	"github.com/liip/sheriff"
-	"github.com/miekg/dns"
 	log "github.com/sirupsen/logrus"
+	"github.com/zmap/dns"
 )
 
 type routineMetadata struct {
@@ -81,7 +81,7 @@ func makeName(name, prefix, nameOverride string) (string, bool) {
 	}
 	trimmedName := strings.TrimSuffix(name, ".")
 	if prefix == "" {
-		return trimmedName,  name != trimmedName
+		return trimmedName, name != trimmedName
 	} else {
 		return strings.Join([]string{prefix, trimmedName}, ""), true
 	}
