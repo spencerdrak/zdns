@@ -3,7 +3,6 @@ on:
   push:
     branches:
       - master
-      - feature/add-versioning
   pull_request:
     branches:
       - master
@@ -35,7 +34,7 @@ jobs:
   # Only tag releases off the master branch: these checks are strictly needed
   # but are useful in case we start building off other branches in the future
   release:
-    if: ${{ github.ref == 'refs/heads/feature/add-versioning' }}
+    if: ${{ github.ref == 'refs/heads/master' }}
     needs: build-and-test
     name: Release Next Tag
     runs-on: ubuntu-latest
@@ -48,5 +47,4 @@ jobs:
       uses: mathieudutour/github-tag-action@v6.0
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        release_branches: feature/add-versioning
-        dry_run: true
+        release_branches: master
