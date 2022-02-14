@@ -78,7 +78,7 @@ func (glf *GlobalLookupFactory) MakeRoutineFactory(threadID int) (zdns.RoutineLo
 
 // Global Registration ========================================================
 //
-func init() {
+func RegisterLookup() {
 	s := new(GlobalLookupFactory)
 	zdns.RegisterLookup("BINDVERSION", s)
 }

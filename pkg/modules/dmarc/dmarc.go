@@ -15,10 +15,11 @@
 package dmarc
 
 import (
+	"regexp"
+
 	"github.com/zmap/dns"
 	"github.com/zmap/zdns/pkg/miekg"
 	"github.com/zmap/zdns/pkg/zdns"
-	"regexp"
 )
 
 const dmarcPrefixRegexp = "^[vV][\x09\x20]*=[\x09\x20]*DMARC1[\x09\x20]*;[\x09\x20]*"
@@ -78,7 +79,7 @@ func (glf *GlobalLookupFactory) MakeRoutineFactory(threadID int) (zdns.RoutineLo
 
 // Global Registration ========================================================
 //
-func init() {
+func RegisterLookup() {
 	s := new(GlobalLookupFactory)
 	zdns.RegisterLookup("DMARC", s)
 }

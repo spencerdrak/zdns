@@ -15,10 +15,11 @@
 package spf
 
 import (
+	"regexp"
+
 	"github.com/zmap/dns"
 	"github.com/zmap/zdns/pkg/miekg"
 	"github.com/zmap/zdns/pkg/zdns"
-	"regexp"
 )
 
 const spfPrefixRegexp = "(?i)^v=spf1"
@@ -78,7 +79,7 @@ func (s *GlobalLookupFactory) MakeRoutineFactory(threadID int) (zdns.RoutineLook
 
 // Global Registration ========================================================
 //
-func init() {
+func RegisterLookup() {
 	s := new(GlobalLookupFactory)
 	zdns.RegisterLookup("SPF", s)
 }
