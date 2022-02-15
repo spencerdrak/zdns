@@ -71,7 +71,7 @@ func registerAllModules() {
 		"dmarc":       &dmarc.GlobalLookupFactory{},
 		"mxlookup":    &mxlookup.GlobalLookupFactory{},
 		"nslookup":    &nslookup.GlobalLookupFactory{},
-		"spf":         &spf.GlobalLookupFactory{},
+		"spflookup":   &spf.GlobalLookupFactory{},
 	}
 
 	raw.AddRawLookupsTo(defaultModules)

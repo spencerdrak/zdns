@@ -555,7 +555,7 @@ class Tests(unittest.TestCase):
         self.assertEqualAnswers(res, self.PTR_LOOKUP_GOOGLE_PUB, cmd)
 
     def test_spf(self):
-        c = "SPF"
+        c = "SPFLOOKUP"
         name = "zdns-testing.com"
         cmd, res = self.run_zdns(c, name)
         self.assertSuccess(res, cmd)
