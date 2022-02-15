@@ -168,10 +168,3 @@ func (s *GlobalLookupFactory) MakeRoutineFactory(threadID int) (zdns.RoutineLook
 	r.Initialize(s.GlobalConf)
 	return r, nil
 }
-
-// Global Registration ========================================================
-//
-func RegisterLookup() {
-	s := new(GlobalLookupFactory)
-	zdns.RegisterLookup("NSLOOKUP", s)
-}

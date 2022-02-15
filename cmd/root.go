@@ -22,6 +22,15 @@ import (
 	"github.com/spf13/viper"
 	"github.com/zmap/zdns/internal/util"
 	"github.com/zmap/zdns/pkg/zdns"
+
+	"github.com/zmap/zdns/pkg/modules/alookup"
+	"github.com/zmap/zdns/pkg/modules/axfr"
+	"github.com/zmap/zdns/pkg/modules/bindversion"
+	"github.com/zmap/zdns/pkg/modules/dmarc"
+	"github.com/zmap/zdns/pkg/modules/mxlookup"
+	"github.com/zmap/zdns/pkg/modules/nslookup"
+	"github.com/zmap/zdns/pkg/modules/raw"
+	"github.com/zmap/zdns/pkg/modules/spf"
 )
 
 var cfgFile string
@@ -36,7 +45,7 @@ https://github.com/zmap/dns (and in turn https://github.com/miekg/dns) for const
 and parsing raw DNS packets. 
 
 ZDNS also includes its own recursive resolution and a cache to further optimize performance.`,
-	ValidArgs: zdns.Validlookups(),
+	ValidArgs: zdns.ValidLookups(),
 	Args:      cobra.ExactValidArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		Run.GlobalConf.Module = strings.ToUpper(args[0])
@@ -51,6 +60,22 @@ func Execute() {
 	if err != nil {
 		os.Exit(1)
 	}
+}
+
+func registerAllModules() {
+	defaultModules := map[string]zdns.GlobalLookupFactory{
+		"alookup":     &alookup.GlobalLookupFactory{},
+		"axfr":        &axfr.GlobalLookupFactory{},
+		"bindversion": &bindversion.GlobalLookupFactory{},
+		"dmarc":       &dmarc.GlobalLookupFactory{},
+		"mxlookup":    &mxlookup.GlobalLookupFactory{},
+		"nslookup":    &nslookup.GlobalLookupFactory{},
+		"spf":         &spf.GlobalLookupFactory{},
+	}
+
+	raw.AddRawLookupsTo(defaultModules)
+
+	zdns.RegisterFactorySet(defaultModules)
 }
 
 func init() {

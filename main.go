@@ -15,7 +15,6 @@ package main
 
 import (
 	"github.com/zmap/zdns/cmd"
-	_ "github.com/zmap/zdns/pkg/modules"
 )
 
 func main() {

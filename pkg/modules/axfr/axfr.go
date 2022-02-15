@@ -167,10 +167,3 @@ func (s *GlobalLookupFactory) Initialize(c *zdns.GlobalConf) error {
 	}
 	return nil
 }
-
-// Global Registration ========================================================
-//
-func RegisterLookup() {
-	s := new(GlobalLookupFactory)
-	zdns.RegisterLookup("AXFR", s)
-}

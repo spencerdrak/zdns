@@ -36,7 +36,7 @@ func Run(run ZdnsRun) {
 	factory := GetLookup(gc.Module)
 
 	if factory == nil {
-		log.Fatal("Invalid lookup module specified. Valid modules: ", ValidlookupsString())
+		log.Fatal("Invalid lookup module specified. Valid modules: ", ValidLookupsString())
 	}
 
 	factory.SetFlags(run.ModuleFlags)

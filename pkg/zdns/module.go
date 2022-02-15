@@ -69,9 +69,9 @@ type RoutineLookupFactory interface {
 // one RoutineLookupFactory per execution =====================================
 //
 type GlobalLookupFactory interface {
-	// Capture the values of cobra/viper flags and add them to the
-	// global factory as appropriate.
-	SetFlags(flags *pflag.FlagSet)
+	// Get the module-specific flags from the run as appropriate
+	// TODO: probably best to let each module define its own flags.
+	SetFlags(ModuleFlags)
 	// global initialization. Gets called once globally
 	// This is called after command line flags have been parsed
 	Initialize(conf *GlobalConf) error
@@ -151,7 +151,7 @@ func (s *BaseGlobalLookupFactory) ZonefileInput() bool {
 }
 
 // keep a mapping from name to factory
-var lookups map[string]GlobalLookupFactory
+var modules FactorySet
 
 // keep a mapping from name to input handler
 var inputHandlers map[string]InputHandler
@@ -159,17 +159,29 @@ var inputHandlers map[string]InputHandler
 // keep a mapping from name to output handler
 var outputHandlers map[string]OutputHandler
 
+// Add Lookups one at a time
 func RegisterLookup(name string, s GlobalLookupFactory) {
-	if lookups == nil {
-		lookups = make(map[string]GlobalLookupFactory, 100)
+	if modules == nil {
+		modules = NewFactorySet()
 	}
-	lookups[name] = s
+	modules.AddModule(name, s)
 }
 
-func ValidlookupsString() string {
-	valid := make([]string, len(lookups))
+// Add a whole factory set to any existing modules.
+// TODO(spencer): standardize naming here. I'm somewhat arbitrarily tossing around
+// lookup, module, factory interchangeably.
+func RegisterFactorySet(s FactorySet) {
+	if modules == nil {
+		modules = NewFactorySet()
+	}
+
+	s.CopyInto(modules)
+}
+
+func ValidLookupsString() string {
+	valid := make([]string, len(modules))
 	i := 0
-	for k := range lookups {
+	for k := range modules {
 		valid[i] = k
 		i++
 	}
@@ -177,10 +189,10 @@ func ValidlookupsString() string {
 	return strings.Join(valid, ", ")
 }
 
-func Validlookups() []string {
-	valid := make([]string, len(lookups))
+func ValidLookups() []string {
+	valid := make([]string, len(modules))
 	i := 0
-	for k := range lookups {
+	for k := range modules {
 		valid[i] = k
 		i++
 	}
@@ -189,7 +201,7 @@ func Validlookups() []string {
 }
 
 func GetLookup(name string) GlobalLookupFactory {
-	if factory, ok := lookups[name]; ok {
+	if factory, ok := modules[name]; ok {
 		return factory
 	}
 	return nil

@@ -76,10 +76,3 @@ func (s *GlobalLookupFactory) MakeRoutineFactory(threadID int) (zdns.RoutineLook
 	rlf.Initialize(s.GlobalConf)
 	return rlf, nil
 }
-
-// Global Registration ========================================================
-//
-func RegisterLookup() {
-	s := new(GlobalLookupFactory)
-	zdns.RegisterLookup("SPF", s)
-}
