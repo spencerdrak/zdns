@@ -153,7 +153,7 @@ func AddRawLookupsTo(s zdns.FactorySet) {
 
 	nimloc := new(miekg.GlobalLookupFactory)
 	nimloc.SetDNSType(dns.TypeNIMLOC)
-	s.AddModule("NS", nimloc)
+	s.AddModule("NIMLOC", nimloc)
 
 	nid := new(miekg.GlobalLookupFactory)
 	nid.SetDNSType(dns.TypeNID)

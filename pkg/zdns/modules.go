@@ -1,6 +1,10 @@
 package zdns
 
-import "strings"
+import (
+	"strings"
+
+	log "github.com/sirupsen/logrus"
+)
 
 // FactorySet is a map of name (string) -> GlobalLookupFactory, one per module.
 type FactorySet map[string]GlobalLookupFactory
@@ -9,6 +13,9 @@ type FactorySet map[string]GlobalLookupFactory
 // the underlying ScanModule instances will be the same.
 func (s FactorySet) CopyInto(destination FactorySet) {
 	for name, m := range s {
+		if _, ok := destination[strings.ToUpper(name)]; ok {
+			log.Warnf("overwriting module %s", name)
+		}
 		destination[strings.ToUpper(name)] = m
 	}
 }
@@ -16,6 +23,9 @@ func (s FactorySet) CopyInto(destination FactorySet) {
 // AddModule adds m to the ModuleSet, accessible via the given name. If the name
 // is already in the ModuleSet, it is overwritten.
 func (s FactorySet) AddModule(name string, m GlobalLookupFactory) {
+	if _, ok := s[strings.ToUpper(name)]; ok {
+		log.Warnf("overwriting module %s", name)
+	}
 	s[strings.ToUpper(name)] = m
 }
 
