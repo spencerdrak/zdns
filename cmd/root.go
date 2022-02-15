@@ -48,6 +48,7 @@ ZDNS also includes its own recursive resolution and a cache to further optimize 
 	ValidArgs: zdns.ValidLookups(),
 	Args:      cobra.ExactValidArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		registerAllModules()
 		Run.GlobalConf.Module = strings.ToUpper(args[0])
 		zdns.Run(Run)
 	},
