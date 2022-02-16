@@ -52,12 +52,22 @@ To use the ZDNS library, a `zdns.ZdnsRun` struct must be created and passed to t
 package main
 
 import (
-	_ "github.com/zmap/zdns/pkg/alookup"
+	"github.com/zmap/zdns/pkg/modules/alookup"
 	"github.com/zmap/zdns/pkg/zdns"
 )
 
 func main() {
 	var run zdns.ZdnsRun
+
+	// Create a set of modules and register all at once
+	desiredModules := map[string]zdns.GlobalLookupFactory{
+		"alookup": &alookup.GlobalLookupFactory{},
+	}
+	zdns.RegisterFactorySet(desiredModules)
+
+	// Or, with the same effect as above, create and register single module
+	// In this case, we overwrite the above, since they share a name.
+	zdns.RegisterLookup("alookup", &alookup.GlobalLookupFactory{})
 
 	// Configure this run to use the alookup module.
 	run.GlobalConf.Module = "ALOOKUP"
@@ -69,10 +79,11 @@ func main() {
 	zdns.Run(run)
 }
 
+
 ```
 The above file, when compiled and run, will wait for newline-separated inputs on STDIN to perform ALOOKUPs. ZDNS will emit warnings for certain fields that are left unset, but will fill in "sane" defaults in this case. If the defaults are unsuitable for the use case, then they can all be configured using the options in the `zdns.GlobalConf`, `zdns.ModuleFlags` or generic fields. 
 
-Note that the package `github.com/zmap/zdns/pkg/alookup` was imported for its side effects. Namely, we need the alookup module to register itself before ZDNS attempts to run. For a list of all packages and what they include, see the Modules section below. This allows the end user to only import packages that are needed. All module packages live in `github.com/zmap/zdns/pkg`. See the modules section below for more information.
+Note that the package `github.com/zmap/zdns/pkg/alookup` was imported and added to the FactorySet.  All module packages live in `github.com/zmap/zdns/pkg`. See the modules section below for more information.
 
 CLI Usage
 ---------------
