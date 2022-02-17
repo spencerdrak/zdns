@@ -71,3 +71,8 @@ We may or may not be able to do this, however, I'll speak with the team on this 
         - Investigate code coverage for this
     - Integration tests: These tests currently poll Google DNS to check the correctness of the tool. We're going to investigate expanding this as a framework for testing. One initial idea was to stand up our own bind server, but, if we can manipulate this easily enough, then we won't need to mess around with spinning up/maintaining our own server at all. 
     - I'll be working with Vishal to develop each of these tests
+
+## Use cases
+- Streaming input into the tool with a controlled/synchronized set of streaming output
+- Pass in a single name and query some set of NSs for that name. Output should be somehow correlated. 
+- Perform an A lookup and an NS lookup at the same time

@@ -83,7 +83,7 @@ func main() {
 ```
 The above file, when compiled and run, will wait for newline-separated inputs on STDIN to perform ALOOKUPs. ZDNS will emit warnings for certain fields that are left unset, but will fill in "sane" defaults in this case. If the defaults are unsuitable for the use case, then they can all be configured using the options in the `zdns.GlobalConf`, `zdns.ModuleFlags` or generic fields. 
 
-Note that the package `github.com/zmap/zdns/pkg/alookup` was imported and added to the FactorySet.  All module packages live in `github.com/zmap/zdns/pkg`. See the modules section below for more information.
+Note that the package `github.com/zmap/zdns/pkg/alookup` was imported and added to the desiredModules object of type `zdns.FactorySet`. All modules live in `github.com/zmap/zdns/pkg` and define a `GlobalLookupFactory` that must be registered with ZDNS before the run begins. This allows the user to select which modules they wish to import, or define their own. See the modules section below for more information.
 
 CLI Usage
 ---------------
