@@ -2,14 +2,16 @@
 
 The interface defined below exposes the ZDNS library to the modules and other programs that wish to use it.
 
+This also assumes that the caching interface will remain nearly the same, so those interfaces have been omitted for brevity.
+
 ```go
 type IsCached bool
-type QuestionId 
 
 type Response struct {
     Result zdns.Result
     Trace  zdns.Trace
     Status zdns.Status
+    // Return an ID linked to the Question, so that distinct queries can be linked.
     Id     UUID
 }
 
