@@ -4,6 +4,8 @@ The interface defined below exposes the ZDNS library to the modules and other pr
 
 This also assumes that the caching interface will remain nearly the same, so those interfaces have been omitted for brevity.
 
+There will be some additional structure around how modules are created and registered in the
+
 Finally, The global and routine LookupFactories may not be necessary anymore. I believe that we 
 
 ```go
