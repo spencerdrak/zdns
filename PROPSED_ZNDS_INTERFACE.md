@@ -76,39 +76,55 @@ The Module interface will also be standardized and made to be more like ZGrab2. 
 
 ```go
 
-// LookupClient is an interface that represents all functions necessary to run a lookup
-type LookupClient interface {
-	LookupClient    zdns.LookupClient
-}
-
 // LookupModule is an interface which represents some higher-level functionality above a 
 type LookupModule interface {
-	// NewFlags is called by the framework to pass to the argument parser. The parsed flags will be passed
-	// to the scanner created by NewScanner().
-	NewFlags() interface{}
-
 	// NewLookupClient is called by the framework for each time an individual scan is specified in the config or on
 	// the command-line. The framework will then call scanner.Initialize(name, flags).
-	NewLookupClient() LookupClient
+	NewLookupClient() zdns.LookupClient
 
 	// Description returns a string suitable for use as an overview of this
 	// module within usage text.
 	Description() string
 }
 
-// ScanFlags is an interface which must be implemented by all types sent to
-// the flag parser
-type ScanFlags interface {
-	// Help optionally returns any additional help text, e.g. specifying what empty defaults
-	// are interpreted as.
-	Help() string
-
-	// Validate enforces all command-line flags and positional arguments have valid values.
-	Validate(args []string) error
-}
-
-
-
 var modules ModuleSet
 
+```
+
+The ModuleSet interface (almost entirely borrowed from ZGrab2) is below:
+
+```go
+// ModuleSet is a map of name (string) -> Module, one per module.
+type ModuleSet map[string]LookupModule
+
+// CopyInto copies the modules in s to destination. The sets will be unique, but
+// the underlying ScanModule instances will be the same.
+func (s ModuleSet) CopyInto(destination ModuleSet) {
+	for name, m := range s {
+		if _, ok := destination[strings.ToUpper(name)]; ok {
+			log.Warnf("overwriting module %s", name)
+		}
+		destination[strings.ToUpper(name)] = m
+	}
+}
+
+// AddModule adds m to the ModuleSet, accessible via the given name. If the name
+// is already in the ModuleSet, it is overwritten.
+func (s ModuleSet) AddModule(name string, m GlobalLookupFactory) {
+	if _, ok := s[strings.ToUpper(name)]; ok {
+		log.Warnf("overwriting module %s", name)
+	}
+	s[strings.ToUpper(name)] = m
+}
+
+// RemoveModule removes the module at the specified name. If the name is not in
+// the module set, nothing happens.
+func (s ModuleSet) RemoveModule(name string) {
+	delete(s, strings.ToUpper(name))
+}
+
+// ModuleSet returns an empty ModuleSet.
+func NewModuleSet() ModuleSet {
+	return make(ModuleSet)
+}
 ```
