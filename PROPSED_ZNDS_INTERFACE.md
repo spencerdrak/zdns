@@ -2,7 +2,12 @@
 
 The interface defined below exposes the ZDNS library to the modules and other programs that wish to use it. This also assumes that the caching interface will remain nearly the same, so those interfaces have been omitted for brevity.
 
-Finally, The global and routine LookupFactories may not be necessary anymore. I believe that we are moving that specific logic to the module themselves - so they'll be responsible for managing all of that state.
+The idea here is that the modules will need to be updated to use this new interface, but will _also_ provide the same interface to any client programs. In this way, we can allow the modules to remain lightweight and only require the end-user client programs to manage the state around input/output, caching, and concurrency. The library will be responsible for the raw lookups, and an example of a module might be something the MXLOOKUP module, which performs more complex operations on top of this. 
+
+This allows clients to either implement all their logic in their client program, or, if their logic is more generally applicable, to write a module that meets their needs.
+
+Finally, The global and routine LookupFactories may not be necessary anymore. I believe that we are moving that specific logic to the modules or clients themselves - so they'll be responsible for managing all of that state.
+
 
 ```go
 type IsCached bool
@@ -28,6 +33,8 @@ type Question struct {
     // Set an ID to associate distinct queries together, for easier aggregation
     // ID will be passed along through the answer.
     Id          UUID
+    // Timeout for individual name resolution
+    Timeout     int
 }
 
 type ClientOptions struct {
@@ -39,27 +46,29 @@ type ClientOptions struct {
     IsCached     IsCached
     // Return a trace
     IsTraced     IsTraced
+    // Logging Verbosity
+    Verbosity    int
+    // Max depth of recursion. Only useful for iterative lookup
+    MaxDepth     int
+    TCPOnly      bool
+    UDPOnly      bool
+    // Nanosecond timestamp resolution in output
+    NsResolution bool
+    // Local Address to use for requests
+    LocalAddr    net.IP
+    // Local interface to use for requests
+    LocalIF      net.Interface
 }
 
 type Cache struct {
 	IterativeCache cachehash.ShardedCacheHash
 }
 
-type InputHandler interface {
-	FeedChannel(in chan<- Question, wg *sync.WaitGroup) error
-}
-
-type OutputHandler interface {
-	WriteResults(results <-chan Response, wg *sync.WaitGroup) error
-}
-
 type LookupClient interface {
 	Initialize(options ClientOptions) error
     SetOptions(options ClientOptions) error
-    // maybe put the input/output handlers in the client, not per-query
 	DoLookup() error
-    //TODO: Caching is only useful in this case
-	DoIterativeLookup(input InputHandler, oh OutputHandler, options LookupOptions) error
+	DoIterativeLookup(cache Cache) error
 }
 ```
 
@@ -67,7 +76,7 @@ The Module interface will also be standardized and made to be more like ZGrab2. 
 
 ```go
 
-// Module is an interface that represents all functions necessary to run a scan
+// Module is an interface that represents all functions necessary to run a lookup
 type Module interface {
 	// Init runs once for this module at library init time
 	Init(flags ScanFlags) error
@@ -83,20 +92,6 @@ type Module interface {
 
 	// Scan connects to a host. The result should be JSON-serializable
 	Scan(t ScanTarget) (ScanStatus, interface{}, error)
-}
-
-// ScanResponse is the result of a scan on a single host
-type ScanResponse struct {
-	// Status is required for all responses.
-	Status ScanStatus `json:"status"`
-
-	// Protocol is the identifier if the protocol that did the scan. In the case of a complex scan, this may differ from
-	// the scan name.
-	Protocol string `json:"protocol"`
-
-	Result    interface{} `json:"result,omitempty"`
-	Timestamp string      `json:"timestamp,omitempty"`
-	Error     *string     `json:"error,omitempty"`
 }
 
 // ScanModule is an interface which represents a module that the framework can
