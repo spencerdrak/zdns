@@ -38,8 +38,6 @@ type Question struct {
 type ClientOptions struct {
     // Reuse socket between requests
     ReuseSockets bool
-    // Use the above cache
-    IsCached     IsCached
     // Return a trace
     IsTraced     IsTraced
     // Logging Verbosity
