@@ -6,7 +6,7 @@ The idea here is that the modules will need to be updated to use this new interf
 
 This allows clients to either implement all their logic in their client program, or, if their logic is more generally applicable, to write a module that meets their needs.
 
-Finally, The global and routine LookupFactories may not be necessary anymore. I believe that we are moving that specific logic to the modules or clients themselves - so they'll be responsible for managing all of that state.
+Finally, The global and routine LookupFactories are not necessary anymore. I believe that we are moving that specific logic to the modules or clients themselves - so they'll be responsible for managing all of that state.
 
 
 ```go
@@ -28,8 +28,6 @@ type Question struct {
 	Class       uint16
     // The Domain name in question
 	Name        string
-    // The nameserver to use. Leave blank for default (system?) resolver
-    Nameserver  string
     // Set an ID to associate distinct queries together, for easier aggregation
     // ID will be passed along through the answer.
     Id          UUID
@@ -58,6 +56,8 @@ type ClientOptions struct {
     LocalAddr    net.IP
     // Local interface to use for requests
     LocalIF      net.Interface
+    // The nameserver to use for all lookups on this interface. Leave blank for default (system?) resolver
+    Nameserver  string
 }
 
 type Cache struct {
@@ -65,10 +65,10 @@ type Cache struct {
 }
 
 type LookupClient interface {
-	Initialize(name string, options ClientOptions) error
+	Initialize(options ClientOptions) error
     SetOptions(options ClientOptions) error
 	DoLookup() error
-	DoIterativeLookup(cache Cache) error
+	DoInternallyRecurisveLookup(cache Cache) error
 }
 ```
 
@@ -79,8 +79,8 @@ The Module interface will also be standardized and made to be more like ZGrab2. 
 // LookupModule is an interface which represents some higher-level functionality above a 
 type LookupModule interface {
 	// NewLookupClient is called by the framework for each time an individual scan is specified in the config or on
-	// the command-line. The framework will then call scanner.Initialize(name, flags).
-	NewLookupClient() zdns.LookupClient
+	// the command-line. The framework will then call scanner.Initialize(options).
+	NewLookupClient() zdns.LookupClient{}
 
 	// Description returns a string suitable for use as an overview of this
 	// module within usage text.
