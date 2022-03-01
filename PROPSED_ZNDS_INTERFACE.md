@@ -63,8 +63,8 @@ type Cache struct {
 type LookupClient interface {
 	Initialize(options ClientOptions) error
     SetOptions(options ClientOptions) error
-	DoLookup() error
-	DoInternallyRecurisveLookup(cache Cache) error
+	DoLookup(question Question) (Response, error)
+	DoInternallyRecurisveLookup(question Question, cache Cache) (Response, error)
 }
 ```
 
