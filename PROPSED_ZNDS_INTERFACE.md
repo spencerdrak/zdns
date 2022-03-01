@@ -38,8 +38,6 @@ type Question struct {
 type ClientOptions struct {
     // Reuse socket between requests
     ReuseSockets bool
-    // Pass in a cache, shared between threads
-    Cache        Cache
     // Use the above cache
     IsCached     IsCached
     // Return a trace
