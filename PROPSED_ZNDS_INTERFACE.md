@@ -78,8 +78,7 @@ The Module interface will also be standardized and made to be more like ZGrab2. 
 
 // LookupModule is an interface which represents some higher-level functionality above a 
 type LookupModule interface {
-	// NewLookupClient is called by the framework for each time an individual scan is specified in the config or on
-	// the command-line. The framework will then call scanner.Initialize(options).
+    // Get a new lookup client to perform scans
 	NewLookupClient() zdns.LookupClient{}
 
 	// Description returns a string suitable for use as an overview of this
