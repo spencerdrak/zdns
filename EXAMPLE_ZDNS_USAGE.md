@@ -17,7 +17,7 @@ hosts := [2]string{"censys.io", "google.com"}
 rawAnswers = make([]zdns.Response, 0)
 mxAnswers = make([]mxlookup.Response, 0)
 
-options := ClientOptions{
+rawOptions := ClientOptions{
     ReuseSockets: true,
     IsTraced: true,
     Verbosity: 3,
@@ -28,13 +28,30 @@ options := ClientOptions{
     LocalAddr: nil
     LocalIF: nil
     Nameserver: "1.1.1.1"
+    ModuleOptions: map[string]string{}
 }
 
 rawClient := zdns.NewLookupClient()
-rawClient.Initialize(options)
+rawClient.Initialize(rawOptions)
+
+mxOptions := ClientOptions{
+    ReuseSockets: true,
+    IsTraced: true,
+    Verbosity: 3,
+    MaxDepth: 10,
+    TCPOnly: false
+    UDPOnly: false
+    NsResolution: false
+    LocalAddr: nil
+    LocalIF: nil
+    Nameserver: "1.1.1.1"
+    ModuleOptions: map[string]string{
+        "ipv4-lookup":"true" 
+    }
+}
 
 mxClient := mxlookup.NewLookupClient()
-mxClient.Initialize(options)
+mxClient.Initialize(mxOptions)
 
 for _, host := range hosts {
     q := {

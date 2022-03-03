@@ -10,8 +10,8 @@ Finally, The global and routine LookupFactories are not necessary anymore. I bel
 
 
 ```go
-type IsCached bool
 type IsTraced bool
+type ModuleOptions map[string]string
 
 type Response struct {
     Result zdns.Result
@@ -54,6 +54,10 @@ type ClientOptions struct {
     LocalIF      net.Interface
     // The nameserver to use for all lookups on this interface. Leave blank for default (system?) resolver
     Nameserver  string
+    // Allow modules to specify their own options if needed.
+    // Modules will be responsible for parsing/validating these options.
+    // The raw ZDNS lookups will leave this empty
+    ModuleOptions ModuleOptions
 }
 
 type Cache struct {
@@ -65,61 +69,5 @@ type LookupClient interface {
     SetOptions(options ClientOptions) error
 	DoLookup(question Question) (Response, error)
 	DoInternallyRecurisveLookup(question Question, cache Cache) (Response, error)
-}
-```
-
-The Module interface will also be standardized and made to be more like ZGrab2. See below for a proposed interface:
-
-```go
-
-// LookupModule is an interface which represents some higher-level functionality above a 
-type LookupModule interface {
-    // Get a new lookup client to perform scans
-	NewLookupClient() zdns.LookupClient{}
-
-	// Description returns a string suitable for use as an overview of this
-	// module within usage text.
-	Description() string
-}
-
-var modules ModuleSet
-
-```
-
-The ModuleSet interface (almost entirely borrowed from ZGrab2) is below:
-
-```go
-// ModuleSet is a map of name (string) -> Module, one per module.
-type ModuleSet map[string]LookupModule
-
-// CopyInto copies the modules in s to destination. The sets will be unique, but
-// the underlying ScanModule instances will be the same.
-func (s ModuleSet) CopyInto(destination ModuleSet) {
-	for name, m := range s {
-		if _, ok := destination[strings.ToUpper(name)]; ok {
-			log.Warnf("overwriting module %s", name)
-		}
-		destination[strings.ToUpper(name)] = m
-	}
-}
-
-// AddModule adds m to the ModuleSet, accessible via the given name. If the name
-// is already in the ModuleSet, it is overwritten.
-func (s ModuleSet) AddModule(name string, m GlobalLookupFactory) {
-	if _, ok := s[strings.ToUpper(name)]; ok {
-		log.Warnf("overwriting module %s", name)
-	}
-	s[strings.ToUpper(name)] = m
-}
-
-// RemoveModule removes the module at the specified name. If the name is not in
-// the module set, nothing happens.
-func (s ModuleSet) RemoveModule(name string) {
-	delete(s, strings.ToUpper(name))
-}
-
-// ModuleSet returns an empty ModuleSet.
-func NewModuleSet() ModuleSet {
-	return make(ModuleSet)
 }
 ```
