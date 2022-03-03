@@ -11,6 +11,7 @@ Finally, The global and routine LookupFactories are not necessary anymore. I bel
 
 ```go
 type IsTraced bool
+type IsInternallyRecursive bool
 type ModuleOptions map[string]string
 
 type Response struct {
@@ -52,12 +53,16 @@ type ClientOptions struct {
     LocalAddr    net.IP
     // Local interface to use for requests
     LocalIF      net.Interface
-    // The nameserver to use for all lookups on this interface. Leave blank for default (system?) resolver
-    Nameserver  string
     // Allow modules to specify their own options if needed.
     // Modules will be responsible for parsing/validating these options.
     // The raw ZDNS lookups will leave this empty
     ModuleOptions ModuleOptions
+    // IsInternallyRecursive tells DoLookup to do internal recursion. If true, uses cache. If false, uses nameserver.
+    IsInternallyRecursive IsInternallyRecursive
+    // Cache to use if the IsInternallyRecursiveFlag is set
+    Cache Cache
+    // Nameserver to use if not internally recursive
+    Nameserver string
 }
 
 type Cache struct {
@@ -68,6 +73,14 @@ type LookupClient interface {
 	Initialize(options ClientOptions) error
     SetOptions(options ClientOptions) error
 	DoLookup(question Question) (Response, error)
-	DoInternallyRecurisveLookup(question Question, cache Cache) (Response, error)
+}
+```
+
+The Module interface below is a wrapper around the lookup client. It allows a clean way to get a new `LookupClient`.
+
+```go
+type Module interface {
+	// NewLookupClient is called by the client to get a new LookupModule
+	NewLookupClient() Scanner
 }
 ```

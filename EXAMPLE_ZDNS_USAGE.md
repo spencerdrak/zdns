@@ -29,6 +29,8 @@ rawOptions := ClientOptions{
     LocalIF: nil
     Nameserver: "1.1.1.1"
     ModuleOptions: map[string]string{}
+    IsInternallyRecursive: false
+    Cache: nil
 }
 
 rawClient := zdns.NewLookupClient()
@@ -48,6 +50,8 @@ mxOptions := ClientOptions{
     ModuleOptions: map[string]string{
         "ipv4-lookup":"true" 
     }
+    IsInternallyRecursive: false
+    Cache: nil
 }
 
 mxClient := mxlookup.NewLookupClient()
@@ -61,7 +65,9 @@ for _, host := range hosts {
         Id: uuid.New()
         Timeout: 15
     }
-    rawAnswers.append(rawAnswers, rawClient.DoLookup())
+    // We could use goroutines to do this, but in this simple example, this is fine.
+    // Everything on the client is thread-safe
+    rawAnswers.append(rawAnswers, rawClient.DoLookup(q))
 }
 
 for _, host := range hosts {
@@ -72,6 +78,8 @@ for _, host := range hosts {
         Id: uuid.New()
         Timeout: 15
     }
-    mxAnswers.append(mxAnswers, mxLookup.DoLookup())
+    // We could use goroutines to do this, but in this simple example, this is fine.
+    // Everything on the client is thread-safe
+    mxAnswers.append(mxAnswers, mxLookup.DoLookup(q))
 }
 ```
