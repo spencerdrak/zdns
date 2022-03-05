@@ -20,6 +20,8 @@ type Response struct {
     Status zdns.Status
     // Return an ID linked to the Question, so that distinct queries can be linked.
     Id     UUID
+    // Define an additional field such that modules can return extra data as needed.
+    Additional interface{}
 }
 
 type Question struct {
@@ -81,6 +83,6 @@ The Module interface below is a wrapper around the lookup client. It allows a cl
 ```go
 type Module interface {
 	// NewLookupClient is called by the client to get a new LookupModule
-	NewLookupClient() Scanner
+	NewLookupClient() LookupClient
 }
 ```
