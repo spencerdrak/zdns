@@ -15,14 +15,12 @@
 package zdns
 
 import (
-	"math/rand"
 	"net"
-	"sort"
-	"strings"
-	"sync"
+	"time"
 
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/pflag"
+	"github.com/google/uuid"
+
+	"github.com/zmap/zdns/cachehash"
 )
 
 /* Each lookup module registers a single GlobalLookupFactory, which is
@@ -43,154 +41,84 @@ import (
  * pieces of functionality and should be inherited in most situations.
  */
 
-// one Lookup per IP/name/connection ==========================================
-//
-
 type Trace []interface{}
 
-type Lookup interface {
-	DoLookup(name, nameServer string) (interface{}, Trace, Status, error)
+type Module interface {
+	// NewLookupClient is called by the client to get a new LookupModule
+	NewLookupClient() LookupClient
 }
 
-type BaseLookup struct {
+type IsTraced bool
+type IsInternallyRecursive bool
+type ModuleOptions map[string]string
+
+type Response struct {
+	Result Result
+	Trace  Trace
+	Status Status
+	// Return an ID linked to the Question, so that distinct queries can be linked.
+	Id uuid.UUID
+	// Define an additional field such that modules can return extra data as needed.
+	Additional interface{}
 }
 
-func (base *BaseLookup) DoLookup(name string, class uint16) (interface{}, Status, error) {
-	log.Fatal("Unimplemented DoLookup")
-	return nil, STATUS_ERROR, nil
+type Question struct {
+	// The DNS type to query for
+	// TODO(spencer): make this a dns.Type?
+	Type uint16
+	// The class to query for
+	// TODO(spencer): make this a dns.Class?
+	Class uint16
+	// The Domain name in question
+	Name string
+	// Set an ID to associate distinct queries together, for easier aggregation
+	// ID will be passed along through the answer.
+	Id uuid.UUID
+	// Timeout for individual name resolution
+	Timeout int
 }
 
-// one RoutineLookupFactory per goroutine =====================================
-//
-type RoutineLookupFactory interface {
-	MakeLookup() (Lookup, error)
+type IterativeOptions struct {
+	// Cache to use if the IsInternallyRecursiveFlag is set
+	Cache               Cache
+	IterativeTimeout    time.Duration
+	IterativeResolution bool
+	// Max depth of recursion. Only useful for iterative lookup
+	MaxDepth int
 }
 
-// one RoutineLookupFactory per execution =====================================
-//
-type GlobalLookupFactory interface {
-	// Capture the values of cobra/viper flags and add them to the
-	// global factory as appropriate.
-	SetFlags(flags *pflag.FlagSet)
-	// global initialization. Gets called once globally
-	// This is called after command line flags have been parsed
-	Initialize(conf *GlobalConf) error
-	Finalize() error
-	// We can't set variables on an interface, so write functions
-	// that define any settings for the factory
-	AllowStdIn() bool
-	// Some modules have Zonefile inputs
-	ZonefileInput() bool
-	// Help text for the CLI
-	Help() string
-	// Return a single scanner which will scan a single host
-	MakeRoutineFactory(int) (RoutineLookupFactory, error)
-	RandomNameServer() string
+type ClientOptions struct {
+	// Reuse socket between requests
+	ReuseSockets bool
+	// Return a trace
+	IsTraced
+	// Logging Verbosity
+	Verbosity int
+	TCPOnly   bool
+	UDPOnly   bool
+	// Nanosecond timestamp resolution in output
+	NsResolution bool
+	// Local Address to use for requests
+	LocalAddr net.IP
+	// Local interface to use for requests
+	LocalIF net.Interface
+	// Nameserver to use if not internally recursive
+	Nameserver string
+	// Allow modules to specify their own options if needed.
+	// Modules will be responsible for parsing/validating these options.
+	// The raw ZDNS lookups will leave this empty
+	ModuleOptions
+	// IsInternallyRecursive tells DoLookup to do internal recursion. If true, uses cache. If false, uses nameserver.
+	IsInternallyRecursive
+	IterativeOptions
 }
 
-// handle domain input
-type InputHandler interface {
-	// FeedChannel takes a channel to write domains to, the WaitGroup managing them, and if it's a zonefile input
-	FeedChannel(in chan<- interface{}, wg *sync.WaitGroup) error
+type Cache struct {
+	IterativeCache cachehash.ShardedCacheHash
 }
 
-// handle output results
-type OutputHandler interface {
-	// takes a channel (results) to write the query results to, and the WaitGroup managing the handlers
-	WriteResults(results <-chan string, wg *sync.WaitGroup) error
-}
-
-type BaseGlobalLookupFactory struct {
-	GlobalConf *GlobalConf
-}
-
-func (f *BaseGlobalLookupFactory) Initialize(c *GlobalConf) error {
-	f.GlobalConf = c
-	return nil
-}
-
-func (f *BaseGlobalLookupFactory) Finalize() error {
-	return nil
-}
-
-func (s *BaseGlobalLookupFactory) SetFlags(f *pflag.FlagSet) {
-}
-
-func (s *BaseGlobalLookupFactory) Help() string {
-	return ""
-}
-
-func (f *BaseGlobalLookupFactory) RandomNameServer() string {
-	if f.GlobalConf == nil {
-		log.Fatal("no global conf initialized")
-	}
-	l := len(f.GlobalConf.NameServers)
-	if l == 0 {
-		log.Fatal("No name servers specified")
-	}
-	return f.GlobalConf.NameServers[rand.Intn(l)]
-}
-
-func (f *BaseGlobalLookupFactory) RandomLocalAddr() net.IP {
-	if f.GlobalConf == nil {
-		log.Fatal("no global conf initialized")
-	}
-	l := len(f.GlobalConf.LocalAddrs)
-	if l == 0 {
-		log.Fatal("No local addresses specified")
-	}
-	return f.GlobalConf.LocalAddrs[rand.Intn(l)]
-}
-
-func (s *BaseGlobalLookupFactory) AllowStdIn() bool {
-	return true
-}
-
-func (s *BaseGlobalLookupFactory) ZonefileInput() bool {
-	return false
-}
-
-// keep a mapping from name to factory
-var lookups map[string]GlobalLookupFactory
-
-// keep a mapping from name to input handler
-var inputHandlers map[string]InputHandler
-
-// keep a mapping from name to output handler
-var outputHandlers map[string]OutputHandler
-
-func RegisterLookup(name string, s GlobalLookupFactory) {
-	if lookups == nil {
-		lookups = make(map[string]GlobalLookupFactory, 100)
-	}
-	lookups[name] = s
-}
-
-func ValidlookupsString() string {
-	valid := make([]string, len(lookups))
-	i := 0
-	for k := range lookups {
-		valid[i] = k
-		i++
-	}
-	sort.Strings(valid)
-	return strings.Join(valid, ", ")
-}
-
-func Validlookups() []string {
-	valid := make([]string, len(lookups))
-	i := 0
-	for k := range lookups {
-		valid[i] = k
-		i++
-	}
-	sort.Strings(valid)
-	return valid
-}
-
-func GetLookup(name string) GlobalLookupFactory {
-	if factory, ok := lookups[name]; ok {
-		return factory
-	}
-	return nil
+type LookupClient interface {
+	Initialize(options ClientOptions) error
+	SetOptions(options ClientOptions) error
+	DoLookup(question Question) (Response, error)
 }

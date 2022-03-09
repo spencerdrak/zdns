@@ -25,7 +25,7 @@ import (
 	"github.com/zmap/dns"
 	"github.com/zmap/go-iptree/blacklist"
 	"github.com/zmap/zdns/pkg/miekg"
-	"github.com/zmap/zdns/pkg/nslookup"
+	"github.com/zmap/zdns/pkg/modules/nslookup"
 	"github.com/zmap/zdns/pkg/zdns"
 )
 

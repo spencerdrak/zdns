@@ -15,216 +15,189 @@
 package zdns
 
 import (
-	"io/ioutil"
-	"math/rand"
-	"net"
-	"os"
-	"runtime"
-	"strings"
+	"errors"
+	"fmt"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-	"github.com/spf13/pflag"
 	"github.com/zmap/dns"
 	"github.com/zmap/zdns/internal/util"
-	"github.com/zmap/zdns/iohandlers"
+
+	log "github.com/sirupsen/logrus"
 )
 
-func Run(gc GlobalConf, flags *pflag.FlagSet,
-	timeout *int, iterationTimeout *int,
-	class_string *string, servers_string *string,
-	config_file *string, localaddr_string *string,
-	localif_string *string, nanoSeconds *bool) {
+// Keep track of some state internal to ZDNS/Raw Module
+type RawOptions struct {
+	IterativeStop time.Time
+	Logger        *log.Entry
+}
 
-	factory := GetLookup(gc.Module)
+// Provide a LookupClient for the "raw" modules, e.g., the ZDNS library itself.
+type RawLookupClient struct {
+	ClientOptions
+	RawOptions
+}
 
-	if factory == nil {
-		log.Fatal("Invalid lookup module specified. Valid modules: ", ValidlookupsString())
+// Create the module wrapper around the RawLookupClient
+type RawModule struct{}
+
+type ConfigError struct {
+	Field string
+	Msg   string
+}
+
+type TraceStep struct {
+	Result     Result                `json:"results" groups:"trace"`
+	DnsType    uint16                `json:"type" groups:"trace"`
+	DnsClass   uint16                `json:"class" groups:"trace"`
+	Name       string                `json:"name" groups:"trace"`
+	NameServer string                `json:"name_server" groups:"trace"`
+	Depth      int                   `json:"depth" groups:"trace"`
+	Layer      string                `json:"layer" groups:"trace"`
+	Cached     IsInternallyRecursive `json:"cached" groups:"trace"`
+}
+
+type DNSFlags struct {
+	Response           bool `json:"response" groups:"flags,long,trace"`
+	Opcode             int  `json:"opcode" groups:"flags,long,trace"`
+	Authoritative      bool `json:"authoritative" groups:"flags,long,trace"`
+	Truncated          bool `json:"truncated" groups:"flags,long,trace"`
+	RecursionDesired   bool `json:"recursion_desired" groups:"flags,long,trace"`
+	RecursionAvailable bool `json:"recursion_available" groups:"flags,long,trace"`
+	Authenticated      bool `json:"authenticated" groups:"flags,long,trace"`
+	CheckingDisabled   bool `json:"checking_disabled" groups:"flags,long,trace"`
+	ErrorCode          int  `json:"error_code" groups:"flags,long,trace"`
+}
+
+type RawResult struct {
+	Answers     []interface{} `json:"answers,omitempty" groups:"short,normal,long,trace"`
+	Additional  []interface{} `json:"additionals,omitempty" groups:"short,normal,long,trace"`
+	Authorities []interface{} `json:"authorities,omitempty" groups:"short,normal,long,trace"`
+	Protocol    string        `json:"protocol" groups:"protocol,normal,long,trace"`
+	Resolver    string        `json:"resolver" groups:"resolver,normal,long,trace"`
+	Flags       DNSFlags      `json:"flags" groups:"flags,long,trace"`
+}
+
+// TODO(spencer): use logging package, but my solution is a half-and-half that is bad
+func (lc RawLookupClient) VerboseLog(depth int, args ...interface{}) {
+	lc.RawOptions.Logger.Debug(util.MakeVerbosePrefix(depth), args)
+}
+
+func (e ConfigError) Error() string {
+	return fmt.Sprintf("Invalid ZDNS Config in field %s - %s", e.Field, e.Msg)
+}
+
+func (m RawModule) NewLookupClient() LookupClient {
+	return RawLookupClient{}
+}
+
+func (lc RawLookupClient) Initialize(option ClientOptions) error {
+	// Do args validation on input
+	// set fields on RawLookupClient
+
+	lc.RawOptions.Logger = log.WithFields(log.Fields{
+		"Module": "RawLookupClient",
+	})
+
+	return errors.New("not implemented")
+}
+
+func (lc RawLookupClient) SetOptions(options ClientOptions) error {
+	// Do args validation on input
+	// set fields on RawLookupClient
+	return errors.New("not implemented")
+}
+
+func (lc RawLookupClient) DoLookup(question Question) (Response, error) {
+	if question.Type == 0 {
+		return Response{}, ConfigError{"Type", "unset (set to 0)"}
 	}
-
-	factory.SetFlags(flags)
-
-	if gc.LogFilePath != "" {
-		f, err := os.OpenFile(gc.LogFilePath, os.O_WRONLY|os.O_CREATE, 0666)
+	if question.Class == 0 {
+		return Response{}, ConfigError{"Class", "unset (set to 0)"}
+	}
+	if question.Type == dns.TypePTR {
+		var err error
+		question.Name, err = dns.ReverseAddr(question.Name)
 		if err != nil {
-			log.Fatalf("Unable to open log file (%s): %s", gc.LogFilePath, err.Error())
-		}
-		log.SetOutput(f)
-	}
-
-	// Translate the assigned verbosity level to a logrus log level.
-	switch gc.Verbosity {
-	case 1: // Fatal
-		log.SetLevel(log.FatalLevel)
-	case 2: // Error
-		log.SetLevel(log.ErrorLevel)
-	case 3: // Warnings  (default)
-		log.SetLevel(log.WarnLevel)
-	case 4: // Information
-		log.SetLevel(log.InfoLevel)
-	case 5: // Debugging
-		log.SetLevel(log.DebugLevel)
-	default:
-		log.Fatal("Unknown verbosity level specified. Must be between 1 (lowest)--5 (highest)")
-	}
-
-	// complete post facto global initialization based on command line arguments
-	gc.Timeout = time.Duration(time.Second * time.Duration(*timeout))
-	gc.IterationTimeout = time.Duration(time.Second * time.Duration(*iterationTimeout))
-
-	// class initialization
-	switch strings.ToUpper(*class_string) {
-	case "INET", "IN":
-		gc.Class = dns.ClassINET
-	case "CSNET", "CS":
-		gc.Class = dns.ClassCSNET
-	case "CHAOS", "CH":
-		gc.Class = dns.ClassCHAOS
-	case "HESIOD", "HS":
-		gc.Class = dns.ClassHESIOD
-	case "NONE":
-		gc.Class = dns.ClassNONE
-	case "ANY":
-		gc.Class = dns.ClassANY
-	default:
-		log.Fatal("Unknown record class specified. Valid valued are INET (default), CSNET, CHAOS, HESIOD, NONE, ANY")
-
-	}
-
-	if *servers_string == "" {
-		// if we're doing recursive resolution, figure out default OS name servers
-		// otherwise, use the set of 13 root name servers
-		if gc.IterativeResolution {
-			gc.NameServers = RootServers[:]
-		} else {
-			ns, err := GetDNSServers(*config_file)
-			if err != nil {
-				ns = util.GetDefaultResolvers()
-				log.Warn("Unable to parse resolvers file. Using ZDNS defaults: ", strings.Join(ns, ", "))
+			resp := Response{
+				Result: Result{},
+				Trace:  Trace{},
+				Status: STATUS_ILLEGAL_INPUT,
+				Id:     question.Id,
 			}
-			gc.NameServers = ns
+			return resp, err
 		}
-		gc.NameServersSpecified = false
-		log.Info("No name servers specified. will use: ", strings.Join(gc.NameServers, ", "))
+		question.Name = question.Name[:len(question.Name)-1]
+	}
+	if lc.ClientOptions.IsInternallyRecursive {
+		lc.VerboseLog(0, "MIEKG-IN: iterative lookup for ", question.Name, " (", question.Type, ")")
+		lc.RawOptions.IterativeStop = time.Now().Add(time.Duration(lc.ClientOptions.IterativeOptions.IterativeTimeout))
+		response, err := lc.iterativeLookup(question, lc.ClientOptions.Nameserver, 1, ".", make([]interface{}, 0))
+		lc.VerboseLog(0, "MIEKG-OUT: iterative lookup for ", question.Name, " (", question.Type, "): status: ", response.Status, " , err: ", err)
+
+		// TODO(spencer): confirm tracing behavior
+		if lc.ClientOptions.IsTraced {
+			return response, err
+		}
+		// TODO(spencer): unsure if the if-block above does anything.
+		return response, err
 	} else {
-		if gc.NameServerMode {
-			log.Fatal("name servers cannot be specified on command line in --name-server-mode")
-		}
-		var ns []string
-		if (*servers_string)[0] == '@' {
-			filepath := (*servers_string)[1:]
-			f, err := ioutil.ReadFile(filepath)
-			if err != nil {
-				log.Fatalf("Unable to read file (%s): %s", filepath, err.Error())
-			}
-			if len(f) == 0 {
-				log.Fatalf("Empty file (%s)", filepath)
-			}
-			ns = strings.Split(strings.Trim(string(f), "\n"), "\n")
-		} else {
-			ns = strings.Split(*servers_string, ",")
-		}
-		for i, s := range ns {
-			ns[i] = util.AddDefaultPortToDNSServerName(s)
-		}
-		gc.NameServers = ns
-		gc.NameServersSpecified = true
+		return tracedRetryingLookup(question, lc.ClientOptions.Nameserver, true)
 	}
+}
 
-	if *localaddr_string != "" {
-		for _, la := range strings.Split(*localaddr_string, ",") {
-			ip := net.ParseIP(la)
-			if ip != nil {
-				gc.LocalAddrs = append(gc.LocalAddrs, ip)
-			} else {
-				log.Fatal("Invalid argument for --local-addr (", la, "). Must be a comma-separated list of valid IP addresses.")
-			}
-		}
-		log.Info("using local address: ", localaddr_string)
-		gc.LocalAddrSpecified = true
+func (lc RawLookupClient) iterativeLookup(question Question, nameServer string, depth int, layer string, trace []interface{}) (Response, error) {
+	if log.GetLevel() == log.DebugLevel {
+		lc.VerboseLog((depth), "iterative lookup for ", q.Name, " (", q.Type, ") against ", nameServer, " layer ", layer)
 	}
+	if depth > lc.ClientOptions.MaxDepth {
+		lc.VerboseLog((depth + 1), "-> Max recursion depth reached")
+		return Response{Result{}, trace, STATUS_ERROR, question.Id, nil}, errors.New("Max recursion depth reached")
+	}
+	response, err := lc.cachedRetryingLookup(question, nameServer, layer, depth)
+	if lc.IsTraced && response.Status == STATUS_NOERROR {
+		var t TraceStep
+		t.Result = response.Result
+		t.DnsType = question.Type
+		t.DnsClass = question.Class
+		t.Name = question.Name
+		t.NameServer = nameServer
+		t.Layer = layer
+		t.Depth = depth
+		t.Cached = lc.IsInternallyRecursive
+		trace = append(trace, t)
 
-	if *localif_string != "" {
-		if gc.LocalAddrSpecified {
-			log.Fatal("Both --local-addr and --local-interface specified.")
-		} else {
-			li, err := net.InterfaceByName(*localif_string)
-			if err != nil {
-				log.Fatal("Invalid local interface specified: ", err)
-			}
-			addrs, err := li.Addrs()
-			if err != nil {
-				log.Fatal("Unable to detect addresses of local interface: ", err)
-			}
-			for _, la := range addrs {
-				gc.LocalAddrs = append(gc.LocalAddrs, la.(*net.IPNet).IP)
-				gc.LocalAddrSpecified = true
-			}
-			log.Info("using local interface: ", localif_string)
-		}
 	}
-	if !gc.LocalAddrSpecified {
-		// Find local address for use in unbound UDP sockets
-		if conn, err := net.Dial("udp", "8.8.8.8:53"); err != nil {
-			log.Fatal("Unable to find default IP address: ", err)
+	if response.Status != STATUS_NOERROR {
+		lc.VerboseLog((depth + 1), "-> error occurred during lookup")
+		return response, err
+	} else if len(response.Result.Answers) != 0 || result.Flags.Authoritative == true {
+		if len(result.Answers) != 0 {
+			s.VerboseLog((depth + 1), "-> answers found")
+			if len(result.Authorities) > 0 {
+				s.VerboseLog((depth + 2), "Dropping ", len(result.Authorities), " authority answers from output")
+				result.Authorities = make([]interface{}, 0)
+			}
+			if len(result.Additional) > 0 {
+				s.VerboseLog((depth + 2), "Dropping ", len(result.Additional), " additional answers from output")
+				result.Additional = make([]interface{}, 0)
+			}
 		} else {
-			gc.LocalAddrs = append(gc.LocalAddrs, conn.LocalAddr().(*net.UDPAddr).IP)
+			s.VerboseLog((depth + 1), "-> authoritative response found")
 		}
-	}
-	if *nanoSeconds {
-		gc.TimeFormat = time.RFC3339Nano
+		return result, trace, status, err
+	} else if len(result.Authorities) != 0 {
+		s.VerboseLog((depth + 1), "-> Authority found, iterating")
+		return s.iterateOnAuthorities(q, depth, result, layer, trace)
 	} else {
-		gc.TimeFormat = time.RFC3339
+		s.VerboseLog((depth + 1), "-> No Authority found, error")
+		return result, trace, zdns.STATUS_ERROR, errors.New("NOERROR record without any answers or authorities")
 	}
-	if gc.GoMaxProcs < 0 {
-		log.Fatal("Invalid argument for --go-processes. Must be >1.")
-	}
-	if gc.GoMaxProcs != 0 {
-		runtime.GOMAXPROCS(gc.GoMaxProcs)
-	}
-	if gc.UDPOnly && gc.TCPOnly {
-		log.Fatal("TCP Only and UDP Only are conflicting")
-	}
-	if gc.NameServerMode && gc.AlexaFormat {
-		log.Fatal("Alexa mode is incompatible with name server mode")
-	}
-	if gc.NameServerMode && gc.MetadataFormat {
-		log.Fatal("Metadata mode is incompatible with name server mode")
-	}
-	if gc.NameServerMode && gc.NameOverride == "" && gc.Module != "BINDVERSION" {
-		log.Fatal("Static Name must be defined with --override-name in --name-server-mode unless DNS module does not expect names (e.g., BINDVERSION).")
-	}
-	// Output Groups are defined by a base + any additional fields that the user wants
-	groups := strings.Split(gc.IncludeInOutput, ",")
-	if gc.ResultVerbosity != "short" && gc.ResultVerbosity != "normal" && gc.ResultVerbosity != "long" && gc.ResultVerbosity != "trace" {
-		log.Fatal("Invalid result verbosity. Options: short, normal, long, trace")
-	}
+}
 
-	gc.OutputGroups = append(gc.OutputGroups, gc.ResultVerbosity)
-	gc.OutputGroups = append(gc.OutputGroups, groups...)
+func tracedRetryingLookup(question Question, nameServer string, recursive bool) (Response, error) {
+	return Response{Result{}, nil, STATUS_ERROR, question.Id, nil}, errors.New("not implemented")
+}
 
-	// Seeding for RandomNameServer()
-	rand.Seed(time.Now().UnixNano())
-
-	// some modules require multiple passes over a file (this is really just the case for zone files)
-	if !factory.AllowStdIn() && gc.InputFilePath == "-" {
-		log.Fatal("Specified module does not allow reading from stdin")
-	}
-
-	// setup i/o
-	gc.InputHandler = iohandlers.NewFileInputHandler(gc.InputFilePath)
-	gc.OutputHandler = iohandlers.NewFileOutputHandler(gc.OutputFilePath)
-
-	// allow the factory to initialize itself
-	if err := factory.Initialize(&gc); err != nil {
-		log.Fatal("Factory was unable to initialize:", err.Error())
-	}
-	// run it.
-	if err := DoLookups(factory, &gc); err != nil {
-		log.Fatal("Unable to run lookups:", err.Error())
-	}
-	// allow the factory to finalize itself
-	if err := factory.Finalize(); err != nil {
-		log.Fatal("Factory was unable to finalize:", err.Error())
-	}
+func (lc RawLookupClient) cachedRetryingLookup(question Question, nameServer, layer string, depth int) (Response, error) {
+	return Response{Result{}, nil, STATUS_ERROR, question.Id, nil}, errors.New("not implemented")
 }
