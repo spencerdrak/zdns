@@ -16,11 +16,12 @@ package zdns
 
 import (
 	"net"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
-
-	"github.com/zmap/zdns/cachehash"
+	"github.com/zmap/dns"
+	"github.com/zmap/go-iptree/blacklist"
 )
 
 /* Each lookup module registers a single GlobalLookupFactory, which is
@@ -53,7 +54,8 @@ type IsInternallyRecursive bool
 type ModuleOptions map[string]string
 
 type Response struct {
-	Result Result
+	//TODO(spencer): revisit Result handling
+	Result interface{}
 	Trace  Trace
 	Status Status
 	// Return an ID linked to the Question, so that distinct queries can be linked.
@@ -104,6 +106,14 @@ type ClientOptions struct {
 	LocalIF net.Interface
 	// Nameserver to use if not internally recursive
 	Nameserver string
+	// How many times to retry a lookup
+	Retries int
+	// Connection to use for lookups
+	Conn *dns.Conn
+	// Set a blacklist of nameservers to not use
+	Blacklist *blacklist.Blacklist
+	// Protect this blacklist from concurrent access
+	BlackListMutex sync.Mutex
 	// Allow modules to specify their own options if needed.
 	// Modules will be responsible for parsing/validating these options.
 	// The raw ZDNS lookups will leave this empty
@@ -111,10 +121,6 @@ type ClientOptions struct {
 	// IsInternallyRecursive tells DoLookup to do internal recursion. If true, uses cache. If false, uses nameserver.
 	IsInternallyRecursive
 	IterativeOptions
-}
-
-type Cache struct {
-	IterativeCache cachehash.ShardedCacheHash
 }
 
 type LookupClient interface {
