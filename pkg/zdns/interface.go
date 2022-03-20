@@ -24,6 +24,7 @@ import (
 	"github.com/zmap/go-iptree/blacklist"
 )
 
+// TODO(spencer): redo documentation
 /* Each lookup module registers a single GlobalLookupFactory, which is
  * instantiated once.  This global factory is responsible for providing command
  * line arguments and performing any configuration that should only occur once.
@@ -47,6 +48,15 @@ type Trace []interface{}
 type Module interface {
 	// NewLookupClient is called by the client to get a new LookupModule
 	NewLookupClient() LookupClient
+	// NewReusableUDPConn is called by the client to get a connection prepared for use socket-sharing use with ZDNS
+	NewReusableUDPConn(localAddr net.IP) (dns.Conn, net.IP, error)
+	// NewSingleUseUDPConn is called by the client to get a connection prepared for use non-socket-sharing use with ZDNS
+	NewSingleUseUDPConn(localAddr net.IP, remoteAddr net.IP) (dns.Conn, net.IP, error)
+}
+type LookupClient interface {
+	Initialize(options *ClientOptions) error
+	SetOptions(options *ClientOptions) error
+	DoLookup(question Question) (Response, error)
 }
 
 type IsTraced bool
@@ -55,21 +65,21 @@ type ModuleOptions map[string]string
 
 type Response struct {
 	//TODO(spencer): revisit Result handling
-	Result interface{}
-	Trace  Trace
-	Status Status
+	Result    interface{} `json:"data" groups:"short,normal,long,trace"`
+	Name      string      `json:"name,omitempty" groups:"short,normal,long,trace"`
+	Timestamp string      `json:"timestamp,omitempty" groups:"short,normal,long,trace"`
+	Trace     Trace       `json:"trace,omitempty" groups:"short,normal,long,trace"`
+	Status    Status      `json:"status" groups:"short,normal,long,trace"`
 	// Return an ID linked to the Question, so that distinct queries can be linked.
-	Id uuid.UUID
+	Id uuid.UUID `json:"id" groups:"short,normal,long,trace"`
 	// Define an additional field such that modules can return extra data as needed.
-	Additional interface{}
+	Additional interface{} `json:"additional,omitempty" groups:"short,normal,long,trace"`
 }
 
 type Question struct {
 	// The DNS type to query for
-	// TODO(spencer): make this a dns.Type?
 	Type uint16
 	// The class to query for
-	// TODO(spencer): make this a dns.Class?
 	Class uint16
 	// The Domain name in question
 	Name string
@@ -106,6 +116,8 @@ type ClientOptions struct {
 	LocalIF net.Interface
 	// Nameserver to use if not internally recursive
 	Nameserver string
+	// Path to system DNS resolver config
+	ResolverConfigFile string
 	// How many times to retry a lookup
 	Retries int
 	// Connection to use for lookups
@@ -114,6 +126,8 @@ type ClientOptions struct {
 	Blacklist *blacklist.Blacklist
 	// Protect this blacklist from concurrent access
 	BlackListMutex sync.Mutex
+	// Non-iterative timeout
+	Timeout time.Duration
 	// Allow modules to specify their own options if needed.
 	// Modules will be responsible for parsing/validating these options.
 	// The raw ZDNS lookups will leave this empty
@@ -123,8 +137,30 @@ type ClientOptions struct {
 	IterativeOptions
 }
 
-type LookupClient interface {
-	Initialize(options ClientOptions) error
-	SetOptions(options ClientOptions) error
-	DoLookup(question Question) (Response, error)
+type ConfigError struct {
+	Field string
+	Msg   string
+}
+
+type TraceStep struct {
+	RawResult  RawResult `json:"results" groups:"trace"`
+	DnsType    uint16    `json:"type" groups:"trace"`
+	DnsClass   uint16    `json:"class" groups:"trace"`
+	Name       string    `json:"name" groups:"trace"`
+	NameServer string    `json:"name_server" groups:"trace"`
+	Depth      int       `json:"depth" groups:"trace"`
+	Layer      string    `json:"layer" groups:"trace"`
+	Cached     IsCached  `json:"cached" groups:"trace"`
+}
+
+type DNSFlags struct {
+	Response           bool `json:"response" groups:"flags,long,trace"`
+	Opcode             int  `json:"opcode" groups:"flags,long,trace"`
+	Authoritative      bool `json:"authoritative" groups:"flags,long,trace"`
+	Truncated          bool `json:"truncated" groups:"flags,long,trace"`
+	RecursionDesired   bool `json:"recursion_desired" groups:"flags,long,trace"`
+	RecursionAvailable bool `json:"recursion_available" groups:"flags,long,trace"`
+	Authenticated      bool `json:"authenticated" groups:"flags,long,trace"`
+	CheckingDisabled   bool `json:"checking_disabled" groups:"flags,long,trace"`
+	ErrorCode          int  `json:"error_code" groups:"flags,long,trace"`
 }

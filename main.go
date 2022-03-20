@@ -16,13 +16,6 @@ package main
 import (
 	"github.com/zmap/zdns/cmd"
 	_ "github.com/zmap/zdns/pkg/miekg"
-	_ "github.com/zmap/zdns/pkg/modules/alookup"
-	_ "github.com/zmap/zdns/pkg/modules/axfr"
-	_ "github.com/zmap/zdns/pkg/modules/bindversion"
-	_ "github.com/zmap/zdns/pkg/modules/dmarc"
-	_ "github.com/zmap/zdns/pkg/modules/mxlookup"
-	_ "github.com/zmap/zdns/pkg/modules/nslookup"
-	_ "github.com/zmap/zdns/pkg/modules/spf"
 )
 
 func main() {

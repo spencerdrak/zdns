@@ -12,8 +12,6 @@
  * permissions and limitations under the License.
  */
 
-//TODO(spencer): figure out how far down to pass the question id. Likely candidate for replacing threadID
-
 package zdns
 
 import (
@@ -23,7 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/zmap/dns"
 	"github.com/zmap/zdns/internal/util"
 
@@ -38,42 +35,15 @@ type RawOptions struct {
 
 // Provide a LookupClient for the "raw" modules, e.g., the ZDNS library itself.
 type RawLookupClient struct {
-	ClientOptions
+	*ClientOptions
 	RawOptions
-	Client    *dns.Client
-	TCPClient *dns.Client
+	Client       *dns.Client
+	TCPClient    *dns.Client
+	NameserverIP string
 }
 
 // Create the module wrapper around the RawLookupClient
 type RawModule struct{}
-
-type ConfigError struct {
-	Field string
-	Msg   string
-}
-
-type TraceStep struct {
-	RawResult  RawResult `json:"results" groups:"trace"`
-	DnsType    uint16    `json:"type" groups:"trace"`
-	DnsClass   uint16    `json:"class" groups:"trace"`
-	Name       string    `json:"name" groups:"trace"`
-	NameServer string    `json:"name_server" groups:"trace"`
-	Depth      int       `json:"depth" groups:"trace"`
-	Layer      string    `json:"layer" groups:"trace"`
-	Cached     IsCached  `json:"cached" groups:"trace"`
-}
-
-type DNSFlags struct {
-	Response           bool `json:"response" groups:"flags,long,trace"`
-	Opcode             int  `json:"opcode" groups:"flags,long,trace"`
-	Authoritative      bool `json:"authoritative" groups:"flags,long,trace"`
-	Truncated          bool `json:"truncated" groups:"flags,long,trace"`
-	RecursionDesired   bool `json:"recursion_desired" groups:"flags,long,trace"`
-	RecursionAvailable bool `json:"recursion_available" groups:"flags,long,trace"`
-	Authenticated      bool `json:"authenticated" groups:"flags,long,trace"`
-	CheckingDisabled   bool `json:"checking_disabled" groups:"flags,long,trace"`
-	ErrorCode          int  `json:"error_code" groups:"flags,long,trace"`
-}
 
 type RawResult struct {
 	Answers     []interface{} `json:"answers,omitempty" groups:"short,normal,long,trace"`
@@ -82,16 +52,9 @@ type RawResult struct {
 	Protocol    string        `json:"protocol" groups:"protocol,normal,long,trace"`
 	Resolver    string        `json:"resolver" groups:"resolver,normal,long,trace"`
 	Flags       DNSFlags      `json:"flags" groups:"flags,long,trace"`
-	Id          uuid.UUID     `json:"id" groups"resolver,normal,long,trace"`
 }
 
-//TODO: remove this, once it's decided how to handle thread ids
-const PLACEHOLDER_THREAD_ID = 999
-
-//TODO: handle socket re-use gracefully
-
-// TODO(spencer): use logging package, but my solution is a half-and-half that is bad
-func (lc RawLookupClient) VerboseLog(depth int, args ...interface{}) {
+func (lc *RawLookupClient) VerboseLog(depth int, args ...interface{}) {
 	lc.RawOptions.Logger.Debug(util.MakeVerbosePrefix(depth), args)
 }
 
@@ -100,10 +63,60 @@ func (e ConfigError) Error() string {
 }
 
 func (m RawModule) NewLookupClient() LookupClient {
-	return RawLookupClient{}
+	return &RawLookupClient{}
 }
 
-func (lc RawLookupClient) Initialize(option ClientOptions) error {
+func (m RawModule) NewReusableUDPConn(localAddr net.IP) (dns.Conn, net.IP, error) {
+	// create PacketConn for use throughout life
+
+	if localAddr == nil {
+		// Find local address for use in unbound UDP sockets
+		if conn, err := net.Dial("udp", "8.8.8.8:53"); err != nil {
+			log.Fatal("Unable to find default IP address: ", err)
+		} else {
+			localAddr = conn.LocalAddr().(*net.UDPAddr).IP
+		}
+	}
+
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{localAddr, 0, ""})
+	if err != nil {
+		log.Fatal("unable to create socket", err)
+		return dns.Conn{}, net.IP{}, err
+	}
+	udpConn := new(dns.Conn)
+	udpConn.Conn = conn
+
+	return *udpConn, localAddr, nil
+}
+
+func (m RawModule) NewSingleUseUDPConn(localAddr net.IP, remoteAddr net.IP) (dns.Conn, net.IP, error) {
+	// create PacketConn for use throughout life
+
+	if localAddr == nil {
+		// Find local address for use in unbound UDP sockets
+		if conn, err := net.Dial("udp", "8.8.8.8:53"); err != nil {
+			log.Fatal("Unable to find default IP address: ", err)
+		} else {
+			localAddr = conn.LocalAddr().(*net.UDPAddr).IP
+		}
+	}
+
+	if remoteAddr == nil {
+		return dns.Conn{}, net.IP{}, errors.New("remoteAddr was set to nil")
+	}
+
+	conn, err := net.Dial("udp", remoteAddr.String())
+	if err != nil {
+		log.Fatal("unable to create connection", err)
+		return dns.Conn{}, net.IP{}, err
+	}
+	udpConn := new(dns.Conn)
+	udpConn.Conn = conn
+
+	return *udpConn, localAddr, nil
+}
+
+func (lc *RawLookupClient) Initialize(options *ClientOptions) error {
 	// Do args validation on input
 	// set fields on RawLookupClient
 
@@ -111,22 +124,93 @@ func (lc RawLookupClient) Initialize(option ClientOptions) error {
 		"Module": "RawLookupClient",
 	})
 
-	return errors.New("not implemented")
+	lc.ClientOptions = options
+
+	//TODO(spencer): handle timeouts
+
+	if lc.LocalAddr == nil {
+		return ConfigError{"LocalAddr", "unset (set to nil)"}
+	}
+
+	// If we're not in iterative mode, and a nameserver hasn't been specified,
+	// just use the system default.
+	if !lc.IsInternallyRecursive {
+		if lc.Nameserver == "" {
+			if lc.ResolverConfigFile == "" {
+				lc.ResolverConfigFile = "/etc/resolv.conf"
+				lc.Logger.Warn("using system default resolver config at /etc/resolv.conf. specify LookupOptions.ResolverConfigFile to override.")
+			}
+			ns, err := GetDNSServers(lc.ResolverConfigFile)
+			if err != nil {
+				log.Warn("Unable to parse resolvers file. Using ZDNS default: 1.1.1.1")
+				lc.Nameserver = "1.1.1.1:53"
+			} else {
+				// TODO(spencer): should we use a different of the system resolvers?
+				lc.Nameserver = ns[0]
+			}
+		}
+	}
+
+	var err error
+	lc.NameserverIP, _, err = net.SplitHostPort(lc.Nameserver)
+
+	if err != nil {
+		return ConfigError{"Nameserver", err.Error()}
+	}
+
+	if !lc.TCPOnly {
+		lc.Client = new(dns.Client)
+		lc.Client.Timeout = lc.Timeout
+		lc.Client.Dialer = &net.Dialer{
+			Timeout:   lc.Timeout,
+			LocalAddr: &net.UDPAddr{IP: lc.LocalAddr},
+		}
+	}
+	if !lc.UDPOnly {
+		lc.TCPClient = new(dns.Client)
+		lc.TCPClient.Net = "tcp"
+		lc.TCPClient.Timeout = lc.Timeout
+		lc.TCPClient.Dialer = &net.Dialer{
+			Timeout:   lc.Timeout,
+			LocalAddr: &net.TCPAddr{IP: lc.LocalAddr},
+		}
+	}
+
+	lc.IterativeTimeout = options.Timeout
+	lc.Retries = options.Retries
+	lc.MaxDepth = options.MaxDepth
+	lc.IterativeResolution = options.IterativeResolution
+
+	// TODO(spencer): set trace verbosity
+	if options.Verbosity == 5 {
+		lc.IsTraced = true
+	} else {
+		lc.IsTraced = false
+	}
+
+	return nil
 }
 
-func (lc RawLookupClient) SetOptions(options ClientOptions) error {
+func (lc *RawLookupClient) SetOptions(options *ClientOptions) error {
 	// Do args validation on input
 	// set fields on RawLookupClient
 	return errors.New("not implemented")
 }
 
-func (lc RawLookupClient) DoLookup(question Question) (Response, error) {
+func (lc *RawLookupClient) DoLookup(question Question) (Response, error) {
 	if question.Type == 0 {
 		return Response{}, ConfigError{"Type", "unset (set to 0)"}
 	}
 	if question.Class == 0 {
 		return Response{}, ConfigError{"Class", "unset (set to 0)"}
 	}
+
+	timeFormat := time.RFC3339
+
+	if lc.NsResolution {
+		timeFormat = time.RFC3339Nano
+	}
+
 	if question.Type == dns.TypePTR {
 		var err error
 		question.Name, err = dns.ReverseAddr(question.Name)
@@ -141,30 +225,40 @@ func (lc RawLookupClient) DoLookup(question Question) (Response, error) {
 		}
 		question.Name = question.Name[:len(question.Name)-1]
 	}
+
 	//TODO(spencer): investigate if this bool condition is the correct one to be used here
-	if lc.ClientOptions.IsInternallyRecursive {
+	if lc.IsInternallyRecursive {
 		lc.VerboseLog(0, "MIEKG-IN: iterative lookup for ", question.Name, " (", question.Type, ")")
-		lc.RawOptions.IterativeStop = time.Now().Add(time.Duration(lc.ClientOptions.IterativeOptions.IterativeTimeout))
-		result, trace, status, err := lc.iterativeLookup(question, lc.ClientOptions.Nameserver, 1, ".", make([]interface{}, 0))
+		lc.RawOptions.IterativeStop = time.Now().Add(time.Duration(lc.IterativeOptions.IterativeTimeout))
+		result, trace, status, err := lc.iterativeLookup(question, lc.Nameserver, 1, ".", make([]interface{}, 0))
 		lc.VerboseLog(0, "MIEKG-OUT: iterative lookup for ", question.Name, " (", question.Type, "): status: ", status, " , err: ", err)
 
-		// TODO(spencer): confirm tracing behavior
-		if lc.ClientOptions.IsTraced {
-			return Response{result, trace, status, question.Id, nil}, err
-		}
-		// TODO(spencer): unsure if the if-block above does anything.
-		return Response{result, trace, status, question.Id, nil}, err
+		return Response{
+			Result:     result,
+			Timestamp:  time.Now().Format(timeFormat),
+			Name:       question.Name,
+			Trace:      trace,
+			Status:     status,
+			Id:         question.Id,
+			Additional: nil}, err
 	} else {
-		result, trace, status, err := lc.tracedRetryingLookup(question, lc.ClientOptions.Nameserver, true)
-		return Response{result, trace, status, question.Id, nil}, err
+		result, trace, status, err := lc.tracedRetryingLookup(question, lc.Nameserver, true)
+		return Response{
+			Result:     result,
+			Timestamp:  time.Now().Format(timeFormat),
+			Name:       question.Name,
+			Trace:      trace,
+			Status:     status,
+			Id:         question.Id,
+			Additional: nil}, err
 	}
 }
 
-func (lc RawLookupClient) iterativeLookup(question Question, nameServer string, depth int, layer string, trace []interface{}) (RawResult, []interface{}, Status, error) {
+func (lc *RawLookupClient) iterativeLookup(question Question, nameServer string, depth int, layer string, trace []interface{}) (RawResult, []interface{}, Status, error) {
 	if log.GetLevel() == log.DebugLevel {
 		lc.VerboseLog((depth), "iterative lookup for ", question.Name, " (", question.Type, ") against ", nameServer, " layer ", layer)
 	}
-	if depth > lc.ClientOptions.MaxDepth {
+	if depth > lc.MaxDepth {
 		lc.VerboseLog((depth + 1), "-> Max recursion depth reached")
 		return RawResult{}, trace, STATUS_ERROR, errors.New("Max recursion depth reached")
 	}
@@ -210,7 +304,7 @@ func (lc RawLookupClient) iterativeLookup(question Question, nameServer string, 
 	}
 }
 
-func (lc RawLookupClient) cachedRetryingLookup(question Question, nameServer, layer string, depth int) (RawResult, IsCached, Status, error) {
+func (lc *RawLookupClient) cachedRetryingLookup(question Question, nameServer, layer string, depth int) (RawResult, IsCached, Status, error) {
 	var isCached IsCached
 	isCached = false
 	lc.VerboseLog(depth+1, "Cached retrying lookup. Name: ", question, ", Layer: ", layer, ", Nameserver: ", nameServer)
@@ -219,17 +313,16 @@ func (lc RawLookupClient) cachedRetryingLookup(question Question, nameServer, la
 		return RawResult{}, isCached, STATUS_ITER_TIMEOUT, nil
 	}
 	// First, we check the answer
-	cachedResult, ok := lc.ClientOptions.Cache.GetCachedResult(question, false, depth+1, PLACEHOLDER_THREAD_ID)
+	cachedResult, ok := lc.Cache.GetCachedResult(question, false, depth+1, question.Id)
 	if ok {
 		isCached = true
 		return cachedResult, isCached, STATUS_NOERROR, nil
 	}
 
-	nameServerIP, _, err := net.SplitHostPort(nameServer)
 	// Stop if we hit a nameserver we don't want to hit
 	if lc.Blacklist != nil {
 		lc.BlackListMutex.Lock()
-		if blacklisted, err := lc.ClientOptions.Blacklist.IsBlacklisted(nameServerIP); err != nil {
+		if blacklisted, err := lc.Blacklist.IsBlacklisted(lc.NameserverIP); err != nil {
 			lc.BlackListMutex.Unlock()
 			lc.VerboseLog(depth+2, "Blacklist error!", err)
 			return RawResult{}, isCached, STATUS_ERROR, err
@@ -259,7 +352,7 @@ func (lc RawLookupClient) cachedRetryingLookup(question Question, nameServer, la
 		qAuth.Name = authName
 		qAuth.Type = dns.TypeNS
 		qAuth.Class = dns.ClassINET
-		cachedResult, ok = lc.Cache.GetCachedResult(qAuth, true, depth+2, PLACEHOLDER_THREAD_ID)
+		cachedResult, ok = lc.Cache.GetCachedResult(qAuth, true, depth+2, question.Id)
 		if ok {
 			isCached = true
 			return cachedResult, isCached, STATUS_NOERROR, nil
@@ -270,16 +363,15 @@ func (lc RawLookupClient) cachedRetryingLookup(question Question, nameServer, la
 	lc.VerboseLog(depth+2, "Wire lookup for name: ", question.Name, " (", question.Type, ") at nameserver: ", nameServer)
 	result, status, err := lc.retryingLookup(question, nameServer, false)
 
-	lc.Cache.CacheUpdate(layer, result, depth+2, PLACEHOLDER_THREAD_ID)
+	lc.Cache.CacheUpdate(layer, result, depth+2, question.Id)
 	return result, isCached, status, err
 }
 
-func (lc RawLookupClient) tracedRetryingLookup(question Question, nameServer string, recursive bool) (RawResult, []interface{}, Status, error) {
+func (lc *RawLookupClient) tracedRetryingLookup(question Question, nameServer string, recursive bool) (RawResult, []interface{}, Status, error) {
 	res, status, err := lc.retryingLookup(question, nameServer, recursive)
 
 	trace := make([]interface{}, 0)
 
-	// TODO: is this proper use of istraced?
 	if lc.IsTraced {
 		var t TraceStep
 		t.RawResult = res
@@ -349,8 +441,8 @@ func (lc *RawLookupClient) iterateOnAuthorities(question Question, depth int, re
 	panic("should not be able to reach here")
 }
 
-func (lc *RawLookupClient) retryingLookup(q Question, nameServer string, recursive bool) (RawResult, Status, error) {
-	lc.VerboseLog(1, "****WIRE LOOKUP*** ", dns.TypeToString[q.Type], " ", q.Name, " ", nameServer)
+func (lc *RawLookupClient) retryingLookup(question Question, nameServer string, recursive bool) (RawResult, Status, error) {
+	lc.VerboseLog(1, "****WIRE LOOKUP*** ", dns.TypeToString[question.Type], " ", question.Name, " ", nameServer)
 
 	var origTimeout time.Duration
 	if lc.Client != nil {
@@ -359,7 +451,7 @@ func (lc *RawLookupClient) retryingLookup(q Question, nameServer string, recursi
 		origTimeout = lc.TCPClient.Timeout
 	}
 	for i := 0; i <= lc.Retries; i++ {
-		result, status, err := lc.doLookup(q, nameServer, recursive)
+		result, status, err := lc.doLookup(question, nameServer, recursive)
 		if (status != STATUS_TIMEOUT && status != STATUS_TEMPORARY) || i == lc.Retries {
 			if lc.Client != nil {
 				lc.Client.Timeout = origTimeout
@@ -427,11 +519,11 @@ func (lc *RawLookupClient) extractAuthority(authority interface{}, layer string,
 }
 
 func (lc *RawLookupClient) doLookup(question Question, nameServer string, recursive bool) (RawResult, Status, error) {
-	return DoLookupWorker(lc.Client, lc.TCPClient, lc.Conn, question, nameServer, recursive)
+	return doLookupInternal(lc.Client, lc.TCPClient, lc.Conn, question, nameServer, recursive, lc.ReuseSockets)
 }
 
-func DoLookupWorker(udp *dns.Client, tcp *dns.Client, conn *dns.Conn, question Question,
-	nameServer string, recursive bool) (RawResult, Status, error) {
+func doLookupInternal(udp *dns.Client, tcp *dns.Client, conn *dns.Conn, question Question,
+	nameServer string, recursive bool, reuseSockets bool) (RawResult, Status, error) {
 	res := RawResult{Answers: []interface{}{}, Authorities: []interface{}{}, Additional: []interface{}{}}
 	res.Resolver = nameServer
 
@@ -446,11 +538,15 @@ func DoLookupWorker(udp *dns.Client, tcp *dns.Client, conn *dns.Conn, question Q
 		res.Protocol = "udp"
 
 		dst, _ := net.ResolveUDPAddr("udp", nameServer)
-		r, _, err = udp.ExchangeWithConnTo(m, conn, dst)
+		if reuseSockets {
+			r, _, err = udp.ExchangeWithConnTo(m, conn, dst)
+		} else {
+			r, _, err = udp.ExchangeWithConn(m, conn)
+		}
 		// if record comes back truncated, but we have a TCP connection, try again with that
 		if r != nil && (r.Truncated || r.Rcode == dns.RcodeBadTrunc) {
 			if tcp != nil {
-				return DoLookupWorker(nil, tcp, conn, question, nameServer, recursive)
+				return doLookupInternal(nil, tcp, conn, question, nameServer, recursive, reuseSockets)
 			} else {
 				return res, STATUS_TRUNCATED, err
 			}
