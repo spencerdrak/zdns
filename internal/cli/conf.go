@@ -69,6 +69,7 @@ type GlobalConf struct {
 	Module          string
 	RequestedModule zdns.Module
 	Class           uint16
+	Type            uint16
 }
 
 type Metadata struct {

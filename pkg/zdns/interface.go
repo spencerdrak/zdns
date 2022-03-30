@@ -65,11 +65,11 @@ type ModuleOptions map[string]string
 
 type Response struct {
 	//TODO(spencer): revisit Result handling
-	Result    interface{} `json:"data" groups:"short,normal,long,trace"`
-	Name      string      `json:"name,omitempty" groups:"short,normal,long,trace"`
-	Timestamp string      `json:"timestamp,omitempty" groups:"short,normal,long,trace"`
-	Trace     Trace       `json:"trace,omitempty" groups:"short,normal,long,trace"`
-	Status    Status      `json:"status" groups:"short,normal,long,trace"`
+	Result    Result `json:"data" groups:"short,normal,long,trace"`
+	Name      string `json:"name,omitempty" groups:"short,normal,long,trace"`
+	Timestamp string `json:"timestamp,omitempty" groups:"short,normal,long,trace"`
+	Trace     Trace  `json:"trace,omitempty" groups:"short,normal,long,trace"`
+	Status    Status `json:"status" groups:"short,normal,long,trace"`
 	// Return an ID linked to the Question, so that distinct queries can be linked.
 	Id uuid.UUID `json:"id" groups:"short,normal,long,trace"`
 	// Define an additional field such that modules can return extra data as needed.

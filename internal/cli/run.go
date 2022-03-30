@@ -3,9 +3,12 @@ package cli
 import (
 	"encoding/json"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/hashicorp/go-version"
 	"github.com/liip/sheriff"
 	log "github.com/sirupsen/logrus"
@@ -97,7 +100,7 @@ func RunLookups(c *GlobalConf) error {
 	lookupWG.Add(c.Threads)
 	startTime := time.Now().Format(c.TimeFormat)
 	for i := 0; i < c.Threads; i++ {
-
+		//TODO(spencer) - run a lookup on each goroutine with appropriate channels passed in
 	}
 	lookupWG.Wait()
 	close(outChan)
@@ -137,6 +140,44 @@ func RunLookups(c *GlobalConf) error {
 	return nil
 }
 
+func parseAlexa(line string) (string, int) {
+	s := strings.SplitN(line, ",", 2)
+	rank, err := strconv.Atoi(s[0])
+	if err != nil {
+		log.Fatal("Malformed Alexa Top Million file")
+	}
+	return s[1], rank
+}
+
+func parseMetadataInputLine(line string) (string, string) {
+	s := strings.SplitN(line, ",", 2)
+	if len(s) == 1 {
+		return s[0], ""
+	}
+	return s[0], s[1]
+}
+
+func parseNormalInputLine(line string) (string, string) {
+	s := strings.SplitN(line, ",", 2)
+	if len(s) == 1 {
+		return s[0], ""
+	} else {
+		return s[0], util.AddDefaultPortToDNSServerName(s[1])
+	}
+}
+
+func makeName(name, prefix, nameOverride string) (string, bool) {
+	if nameOverride != "" {
+		return nameOverride, true
+	}
+	trimmedName := strings.TrimSuffix(name, ".")
+	if prefix == "" {
+		return trimmedName, name != trimmedName
+	} else {
+		return strings.Join([]string{prefix, trimmedName}, ""), true
+	}
+}
+
 func runRoutineLookup(gc *GlobalConf, input <-chan interface{}, output chan<- string, metaChan chan<- routineMetadata, wg *sync.WaitGroup, lc zdns.LookupClient) error {
 	logger := log.WithFields(log.Fields{
 		"Module": "cli",
@@ -146,14 +187,9 @@ func runRoutineLookup(gc *GlobalConf, input <-chan interface{}, output chan<- st
 	metadata.Status = make(map[zdns.Status]int)
 	for genericInput := range input {
 		var res zdns.Response
-		var innerRes interface{}
-		var trace []interface{}
 		var status zdns.Status
 		var err error
-		l, err := f.MakeLookup()
-		if err != nil {
-			logger.Fatal("Unable to build lookup instance", err)
-		}
+
 		line := genericInput.(string)
 		var changed bool
 		var lookupName string
@@ -163,10 +199,12 @@ func runRoutineLookup(gc *GlobalConf, input <-chan interface{}, output chan<- st
 		var entryMetadata string
 		if gc.AlexaFormat == true {
 			rawName, rank = parseAlexa(line)
+			//TODO(spencer) - this is expecting a RawResult as it's defined here.
 			res.AlexaRank = rank
 		} else if gc.MetadataFormat {
 			rawName, entryMetadata = parseMetadataInputLine(line)
 			res.Metadata = entryMetadata
+			// TODO(spencer) - handle multiple nameserver mode. This may require change to the raw lib.
 		} else if gc.NameServerMode {
 			nameServer = util.AddDefaultPortToDNSServerName(line)
 		} else {
@@ -176,14 +214,31 @@ func runRoutineLookup(gc *GlobalConf, input <-chan interface{}, output chan<- st
 		if changed {
 			res.AlteredName = lookupName
 		}
+
+		//TODO(spencer) - remove this
+		logger.Info(nameServer)
+
 		res.Name = rawName
 		res.Class = dns.Class(gc.Class).String()
-		innerRes, trace, status, err = l.DoLookup(lookupName, nameServer)
+
+		// TODO(spencer): set a Type whenever this question is headed to the RAW module. Otherwise, the module should take care of this.
+		// TODO(spencer): maybe we need a different question or different handling for this on the raw side?
+		// TODO(spencer): timeouts
+		question := zdns.Question{
+			Name: lookupName,
+			Id:   uuid.New(),
+		}
+
+		response, err = lc.DoLookup(question)
 		res.Timestamp = time.Now().Format(gc.TimeFormat)
-		if status != STATUS_NO_OUTPUT {
+
+		//TODO(spencer) - result handling is weird
+		// The idea here is to grab the response from the lib, and construct a new response using the parts of it.
+		// Messy, but not unheard of.
+		if status != zdns.STATUS_NO_OUTPUT {
 			res.Status = string(status)
-			res.Data = innerRes
-			res.Trace = trace
+			res.Data = response.Result
+			res.Trace = response.Trace
 			if err != nil {
 				res.Error = err.Error()
 			}

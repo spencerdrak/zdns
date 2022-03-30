@@ -234,7 +234,7 @@ func (lc *RawLookupClient) DoLookup(question Question) (Response, error) {
 		lc.VerboseLog(0, "MIEKG-OUT: iterative lookup for ", question.Name, " (", question.Type, "): status: ", status, " , err: ", err)
 
 		return Response{
-			Result:     result,
+			Result:     Result{Data: result},
 			Timestamp:  time.Now().Format(timeFormat),
 			Name:       question.Name,
 			Trace:      trace,
@@ -244,7 +244,7 @@ func (lc *RawLookupClient) DoLookup(question Question) (Response, error) {
 	} else {
 		result, trace, status, err := lc.tracedRetryingLookup(question, lc.Nameserver, true)
 		return Response{
-			Result:     result,
+			Result:     Result{Data: result},
 			Timestamp:  time.Now().Format(timeFormat),
 			Name:       question.Name,
 			Trace:      trace,
@@ -260,7 +260,7 @@ func (lc *RawLookupClient) iterativeLookup(question Question, nameServer string,
 	}
 	if depth > lc.MaxDepth {
 		lc.VerboseLog((depth + 1), "-> Max recursion depth reached")
-		return RawResult{}, trace, STATUS_ERROR, errors.New("Max recursion depth reached")
+		return RawResult{}, trace, STATUS_ERROR, errors.New("max recursion depth reached")
 	}
 	result, isCached, status, err := lc.cachedRetryingLookup(question, nameServer, layer, depth)
 	if lc.IsTraced && status == STATUS_NOERROR {

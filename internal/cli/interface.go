@@ -1,6 +1,8 @@
 package cli
 
-import "sync"
+import (
+	"sync"
+)
 
 // handle domain input
 type InputHandler interface {
