@@ -186,7 +186,6 @@ func runRoutineLookup(gc *GlobalConf, input <-chan interface{}, output chan<- st
 	var metadata routineMetadata
 	metadata.Status = make(map[zdns.Status]int)
 	for genericInput := range input {
-		var res zdns.Response
 		var status zdns.Status
 		var err error
 
@@ -194,32 +193,8 @@ func runRoutineLookup(gc *GlobalConf, input <-chan interface{}, output chan<- st
 		var changed bool
 		var lookupName string
 		rawName := ""
-		nameServer := ""
 		var rank int
 		var entryMetadata string
-		if gc.AlexaFormat == true {
-			rawName, rank = parseAlexa(line)
-			//TODO(spencer) - this is expecting a RawResult as it's defined here.
-			res.AlexaRank = rank
-		} else if gc.MetadataFormat {
-			rawName, entryMetadata = parseMetadataInputLine(line)
-			res.Metadata = entryMetadata
-			// TODO(spencer) - handle multiple nameserver mode. This may require change to the raw lib.
-		} else if gc.NameServerMode {
-			nameServer = util.AddDefaultPortToDNSServerName(line)
-		} else {
-			rawName, nameServer = parseNormalInputLine(line)
-		}
-		lookupName, changed = makeName(rawName, gc.NamePrefix, gc.NameOverride)
-		if changed {
-			res.AlteredName = lookupName
-		}
-
-		//TODO(spencer) - remove this
-		logger.Info(nameServer)
-
-		res.Name = rawName
-		res.Class = dns.Class(gc.Class).String()
 
 		// TODO(spencer): set a Type whenever this question is headed to the RAW module. Otherwise, the module should take care of this.
 		// TODO(spencer): maybe we need a different question or different handling for this on the raw side?
@@ -229,25 +204,40 @@ func runRoutineLookup(gc *GlobalConf, input <-chan interface{}, output chan<- st
 			Id:   uuid.New(),
 		}
 
-		response, err = lc.DoLookup(question)
-		res.Timestamp = time.Now().Format(gc.TimeFormat)
+		response, err := lc.DoLookup(question)
 
-		//TODO(spencer) - result handling is weird
-		// The idea here is to grab the response from the lib, and construct a new response using the parts of it.
-		// Messy, but not unheard of.
+		//TODO(spencer) - might be best to move this logic into the Raw portion. unsure.
+		response.Timestamp = time.Now().Format(gc.TimeFormat)
+		response.Name = rawName
+		response.Result.Class = dns.Class(gc.Class).String()
+
+		if gc.AlexaFormat == true {
+			rawName, rank = parseAlexa(line)
+			response.Result.AlexaRank = rank
+		} else if gc.MetadataFormat {
+			rawName, entryMetadata = parseMetadataInputLine(line)
+			response.Result.Metadata = entryMetadata
+			// TODO(spencer) - handle multiple nameserver mode. This may require change to the raw lib.
+		} else if gc.NameServerMode {
+			//nameServer := util.AddDefaultPortToDNSServerName(line)
+		} else {
+			//rawName, nameServer := parseNormalInputLine(line)
+		}
+		lookupName, changed = makeName(rawName, gc.NamePrefix, gc.NameOverride)
+		if changed {
+			response.Result.AlteredName = lookupName
+		}
+
 		if status != zdns.STATUS_NO_OUTPUT {
-			res.Status = string(status)
-			res.Data = response.Result
-			res.Trace = response.Trace
 			if err != nil {
-				res.Error = err.Error()
+				response.Result.Error = err.Error()
 			}
 			v, _ := version.NewVersion("0.0.0")
 			o := &sheriff.Options{
 				Groups:     gc.OutputGroups,
 				ApiVersion: v,
 			}
-			data, err := sheriff.Marshal(o, res)
+			data, err := sheriff.Marshal(o, response)
 			jsonRes, err := json.Marshal(data)
 			if err != nil {
 				logger.Fatal("Unable to marshal JSON result", err)
