@@ -3,8 +3,6 @@ package cli
 import (
 	"net"
 	"time"
-
-	"github.com/zmap/zdns/pkg/zdns"
 )
 
 type ZdnsRun struct {
@@ -67,7 +65,7 @@ type GlobalConf struct {
 	NameServerMode bool
 
 	Module          string
-	RequestedModule zdns.Module
+	RequestedModule TypedModule
 	Class           uint16
 	Type            uint16
 }

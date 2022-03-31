@@ -4,12 +4,18 @@ import (
 	"strings"
 
 	log "github.com/sirupsen/logrus"
+	"github.com/zmap/dns"
 	"github.com/zmap/zdns/pkg/zdns"
 )
 
-type ModuleSet map[string]zdns.Module
+type TypedModule struct {
+	Module zdns.Module
+	Type   uint16
+}
 
-func (m ModuleSet) AddModule(name string, mod zdns.Module) {
+type ModuleSet map[string]TypedModule
+
+func (m ModuleSet) AddModule(name string, mod TypedModule) {
 	logger := log.WithFields(log.Fields{
 		"Module": "cli",
 	})
@@ -44,7 +50,14 @@ func GenerateModSet() ModuleSet {
 
 	// In addition to writing the new module, devs are expected to add new modules to the CLI below.
 	// The CLI should support all modules that are tracked within ZDNS itself.
-	modSet.AddModule("RAW", zdns.RawModule{})
+	modSet.AddModule("A", TypedModule{
+		zdns.RawModule{},
+		dns.TypeA,
+	})
+	modSet.AddModule("AAAA", TypedModule{
+		zdns.RawModule{},
+		dns.TypeAAAA,
+	})
 
 	return modSet
 }

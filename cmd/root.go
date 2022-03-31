@@ -20,12 +20,12 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"github.com/zmap/zdns/internal/cli"
 	"github.com/zmap/zdns/internal/util"
-	"github.com/zmap/zdns/pkg/zdns"
 )
 
 var cfgFile string
-var GC zdns.GlobalConf
+var GC cli.GlobalConf
 
 //TODO: these options may need to be set as flags or in GC, to standardize.
 var (
@@ -48,16 +48,16 @@ https://github.com/zmap/dns (and in turn https://github.com/miekg/dns) for const
 and parsing raw DNS packets. 
 
 ZDNS also includes its own recursive resolution and a cache to further optimize performance.`,
+	// TODO(spencer) - args processing correctly
 	// ValidArgs: zdns.Validlookups(),
 	Args: cobra.ExactValidArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		GC.Module = strings.ToUpper(args[0])
-		fmt.Println("not implemented")
-		// zdns.Run(GC, cmd.Flags(),
-		// 	&Timeout, &IterationTimeout,
-		// 	&Class_string, &Servers_string,
-		// 	&Config_file, &Localaddr_string,
-		// 	&Localif_string, &NanoSeconds)
+		cli.Run(GC, cmd.Flags(),
+			&Timeout, &IterationTimeout,
+			&Class_string, &Servers_string,
+			&Config_file, &Localaddr_string,
+			&Localif_string, &NanoSeconds)
 	},
 }
 

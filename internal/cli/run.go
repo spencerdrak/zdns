@@ -65,17 +65,17 @@ func RunLookups(c *GlobalConf) error {
 	go outHandler.WriteResults(outChan, &routineWG)
 	routineWG.Add(2)
 
-	conn, localAddr, err := c.RequestedModule.NewReusableUDPConn(nil)
+	conn, localAddr, err := c.RequestedModule.Module.NewReusableUDPConn(nil)
 
 	if err != nil {
 		panic(err)
 	}
 
-	client := c.RequestedModule.NewLookupClient()
+	client := c.RequestedModule.Module.NewLookupClient()
 
 	//TODO(spencer) - populate from GlobalConf
 	clientOptions := zdns.ClientOptions{
-		ReuseSockets:          false,
+		ReuseSockets:          true,
 		IsTraced:              true,
 		Verbosity:             3,
 		TCPOnly:               false,
@@ -100,7 +100,9 @@ func RunLookups(c *GlobalConf) error {
 	lookupWG.Add(c.Threads)
 	startTime := time.Now().Format(c.TimeFormat)
 	for i := 0; i < c.Threads; i++ {
-		//TODO(spencer) - run a lookup on each goroutine with appropriate channels passed in
+		go runRoutineLookup(c, inChan,
+			outChan, metaChan,
+			&lookupWG, client)
 	}
 	lookupWG.Wait()
 	close(outChan)
@@ -200,8 +202,10 @@ func runRoutineLookup(gc *GlobalConf, input <-chan interface{}, output chan<- st
 		// TODO(spencer): maybe we need a different question or different handling for this on the raw side?
 		// TODO(spencer): timeouts
 		question := zdns.Question{
-			Name: lookupName,
-			Id:   uuid.New(),
+			Name:  lookupName,
+			Id:    uuid.New(),
+			Type:  gc.RequestedModule.Type,
+			Class: gc.Class,
 		}
 
 		response, err := lc.DoLookup(question)
