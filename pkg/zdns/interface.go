@@ -52,6 +52,9 @@ type Module interface {
 	NewReusableUDPConn(localAddr net.IP) (dns.Conn, net.IP, error)
 	// NewSingleUseUDPConn is called by the client to get a connection prepared for use non-socket-sharing use with ZDNS
 	NewSingleUseUDPConn(localAddr net.IP, remoteAddr net.IP) (dns.Conn, net.IP, error)
+	// Tell the framework whether or not this module should allow STDIN. This is mostly used in the CLI, but may be
+	// useful in other cases.
+	AllowStdIn() bool
 }
 type LookupClient interface {
 	Initialize(options *ClientOptions) error
@@ -83,6 +86,8 @@ type Question struct {
 	Class uint16
 	// The Domain name in question
 	Name string
+	// The Nameserver to use for this query
+	NameServer string
 	// Set an ID to associate distinct queries together, for easier aggregation
 	// ID will be passed along through the answer.
 	Id uuid.UUID
@@ -114,10 +119,6 @@ type ClientOptions struct {
 	LocalAddr net.IP
 	// Local interface to use for requests
 	LocalIF net.Interface
-	// Nameserver to use if not internally recursive
-	Nameserver string
-	// Path to system DNS resolver config
-	ResolverConfigFile string
 	// How many times to retry a lookup
 	Retries int
 	// Connection to use for lookups

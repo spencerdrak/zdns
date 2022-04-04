@@ -2,7 +2,6 @@ package cli
 
 import (
 	"io/ioutil"
-	"math/rand"
 	"net"
 	"os"
 	"runtime"
@@ -18,11 +17,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func Run(gc GlobalConf, flags *pflag.FlagSet,
-	timeout *int, iterationTimeout *int,
-	class_string *string, servers_string *string,
-	config_file *string, localaddr_string *string,
-	localif_string *string, nanoSeconds *bool) {
+func Run(run ZdnsRun, flags *pflag.FlagSet) {
 
 	logger := log.WithFields(log.Fields{
 		"Module": "cli",
@@ -30,24 +25,24 @@ func Run(gc GlobalConf, flags *pflag.FlagSet,
 
 	modSet := GenerateModSet()
 
-	if !modSet.HasModule(gc.Module) {
-		log.Fatal("Invalid lookup module specified. Valid modules: ", modSet.ValidModulesString())
+	if !modSet.HasModule(run.GlobalConf.Module) {
+		logger.Fatal("Invalid lookup module specified. Valid modules: ", modSet.ValidModulesString())
 	}
 
-	gc.RequestedModule = modSet[gc.Module]
+	run.GlobalConf.RequestedModule = modSet[run.GlobalConf.Module]
 
 	// TODO(spencer) - set module-specific flags
 
-	if gc.LogFilePath != "" {
-		f, err := os.OpenFile(gc.LogFilePath, os.O_WRONLY|os.O_CREATE, 0666)
+	if run.GlobalConf.LogFilePath != "" {
+		f, err := os.OpenFile(run.GlobalConf.LogFilePath, os.O_WRONLY|os.O_CREATE, 0666)
 		if err != nil {
-			log.Fatalf("Unable to open log file (%s): %s", gc.LogFilePath, err.Error())
+			logger.Fatalf("Unable to open log file (%s): %s", run.GlobalConf.LogFilePath, err.Error())
 		}
 		log.SetOutput(f)
 	}
 
 	// Translate the assigned verbosity level to a logrus log level.
-	switch gc.Verbosity {
+	switch run.GlobalConf.Verbosity {
 	case 1: // Fatal
 		log.SetLevel(log.FatalLevel)
 	case 2: // Error
@@ -59,154 +54,153 @@ func Run(gc GlobalConf, flags *pflag.FlagSet,
 	case 5: // Debugging
 		log.SetLevel(log.DebugLevel)
 	default:
-		log.Fatal("Unknown verbosity level specified. Must be between 1 (lowest)--5 (highest)")
+		logger.Fatal("Unknown verbosity level specified. Must be between 1 (lowest)--5 (highest)")
 	}
 
 	// complete post facto global initialization based on command line arguments
-	gc.Timeout = time.Duration(time.Second * time.Duration(*timeout))
-	gc.IterationTimeout = time.Duration(time.Second * time.Duration(*iterationTimeout))
+	run.GlobalConf.Timeout = time.Duration(time.Second * time.Duration(run.Timeout))
+	run.GlobalConf.IterationTimeout = time.Duration(time.Second * time.Duration(run.IterationTimeout))
 
 	// class initialization
-	switch strings.ToUpper(*class_string) {
+	switch strings.ToUpper(run.Class) {
 	case "INET", "IN":
-		gc.Class = dns.ClassINET
+		run.GlobalConf.Class = dns.ClassINET
 	case "CSNET", "CS":
-		gc.Class = dns.ClassCSNET
+		run.GlobalConf.Class = dns.ClassCSNET
 	case "CHAOS", "CH":
-		gc.Class = dns.ClassCHAOS
+		run.GlobalConf.Class = dns.ClassCHAOS
 	case "HESIOD", "HS":
-		gc.Class = dns.ClassHESIOD
+		run.GlobalConf.Class = dns.ClassHESIOD
 	case "NONE":
-		gc.Class = dns.ClassNONE
+		run.GlobalConf.Class = dns.ClassNONE
 	case "ANY":
-		gc.Class = dns.ClassANY
+		run.GlobalConf.Class = dns.ClassANY
 	default:
-		log.Fatal("Unknown record class specified. Valid valued are INET (default), CSNET, CHAOS, HESIOD, NONE, ANY")
+		logger.Fatal("Unknown record class specified. Valid valued are INET (default), CSNET, CHAOS, HESIOD, NONE, ANY")
 	}
 
-	if *servers_string == "" {
+	if run.Servers == "" {
 		// if we're doing recursive resolution, figure out default OS name servers
 		// otherwise, use the set of 13 root name servers
-		if gc.IterativeResolution {
-			gc.NameServers = RootServers[:]
+		if run.GlobalConf.IterativeResolution {
+			run.GlobalConf.NameServers = RootServers[:]
 		} else {
-			ns, err := zdns.GetDNSServers(*config_file)
+			ns, err := zdns.GetDNSServers(run.ConfigFile)
 			if err != nil {
 				ns = util.GetDefaultResolvers()
-				log.Warn("Unable to parse resolvers file. Using ZDNS defaults: ", strings.Join(ns, ", "))
+				logger.Warn("Unable to parse resolvers file. Using ZDNS defaults: ", strings.Join(ns, ", "))
 			}
-			gc.NameServers = ns
+			run.GlobalConf.NameServers = ns
 		}
-		gc.NameServersSpecified = false
-		log.Info("No name servers specified. will use: ", strings.Join(gc.NameServers, ", "))
+		run.GlobalConf.NameServersSpecified = false
+		logger.Info("No name servers specified. will use: ", strings.Join(run.GlobalConf.NameServers, ", "))
 	} else {
-		if gc.NameServerMode {
-			log.Fatal("name servers cannot be specified on command line in --name-server-mode")
+		if run.GlobalConf.NameServerMode {
+			logger.Fatal("name servers cannot be specified on command line in --name-server-mode")
 		}
 		var ns []string
-		if (*servers_string)[0] == '@' {
-			filepath := (*servers_string)[1:]
+		if (run.Servers)[0] == '@' {
+			filepath := (run.Servers)[1:]
 			f, err := ioutil.ReadFile(filepath)
 			if err != nil {
-				log.Fatalf("Unable to read file (%s): %s", filepath, err.Error())
+				logger.Fatalf("Unable to read file (%s): %s", filepath, err.Error())
 			}
 			if len(f) == 0 {
-				log.Fatalf("Empty file (%s)", filepath)
+				logger.Fatalf("Empty file (%s)", filepath)
 			}
 			ns = strings.Split(strings.Trim(string(f), "\n"), "\n")
 		} else {
-			ns = strings.Split(*servers_string, ",")
+			ns = strings.Split(run.Servers, ",")
 		}
 		for i, s := range ns {
 			ns[i] = util.AddDefaultPortToDNSServerName(s)
 		}
-		gc.NameServers = ns
-		gc.NameServersSpecified = true
+		run.GlobalConf.NameServers = ns
+		run.GlobalConf.NameServersSpecified = true
 	}
 
-	if *localaddr_string != "" {
-		for _, la := range strings.Split(*localaddr_string, ",") {
+	if run.LocalAddr != "" {
+		for _, la := range strings.Split(run.LocalAddr, ",") {
 			ip := net.ParseIP(la)
 			if ip != nil {
-				gc.LocalAddrs = append(gc.LocalAddrs, ip)
+				run.GlobalConf.LocalAddrs = append(run.GlobalConf.LocalAddrs, ip)
 			} else {
-				log.Fatal("Invalid argument for --local-addr (", la, "). Must be a comma-separated list of valid IP addresses.")
+				logger.Fatal("Invalid argument for --local-addr (", la, "). Must be a comma-separated list of valid IP addresses.")
 			}
 		}
-		log.Info("using local address: ", localaddr_string)
-		gc.LocalAddrSpecified = true
+		logger.Info("using local address: ", run.LocalAddr)
+		run.GlobalConf.LocalAddrSpecified = true
 	}
 
-	if *localif_string != "" {
-		if gc.LocalAddrSpecified {
-			log.Fatal("Both --local-addr and --local-interface specified.")
+	if run.LocalIF != "" {
+		if run.GlobalConf.LocalAddrSpecified {
+			logger.Fatal("Both --local-addr and --local-interface specified.")
 		} else {
-			li, err := net.InterfaceByName(*localif_string)
+			li, err := net.InterfaceByName(run.LocalIF)
 			if err != nil {
-				log.Fatal("Invalid local interface specified: ", err)
+				logger.Fatal("Invalid local interface specified: ", err)
 			}
 			addrs, err := li.Addrs()
 			if err != nil {
-				log.Fatal("Unable to detect addresses of local interface: ", err)
+				logger.Fatal("Unable to detect addresses of local interface: ", err)
 			}
 			for _, la := range addrs {
-				gc.LocalAddrs = append(gc.LocalAddrs, la.(*net.IPNet).IP)
-				gc.LocalAddrSpecified = true
+				run.GlobalConf.LocalAddrs = append(run.GlobalConf.LocalAddrs, la.(*net.IPNet).IP)
+				run.GlobalConf.LocalAddrSpecified = true
 			}
-			log.Info("using local interface: ", localif_string)
+			logger.Info("using local interface: ", run.LocalIF)
 		}
 	}
-	if !gc.LocalAddrSpecified {
+	if !run.GlobalConf.LocalAddrSpecified {
 		// Find local address for use in unbound UDP sockets
 		if conn, err := net.Dial("udp", "8.8.8.8:53"); err != nil {
-			log.Fatal("Unable to find default IP address: ", err)
+			logger.Fatal("Unable to find default IP address: ", err)
 		} else {
-			gc.LocalAddrs = append(gc.LocalAddrs, conn.LocalAddr().(*net.UDPAddr).IP)
+			run.GlobalConf.LocalAddrs = append(run.GlobalConf.LocalAddrs, conn.LocalAddr().(*net.UDPAddr).IP)
 		}
 	}
-	if *nanoSeconds {
-		gc.TimeFormat = time.RFC3339Nano
+	if run.NanoSeconds {
+		run.GlobalConf.TimeFormat = time.RFC3339Nano
 	} else {
-		gc.TimeFormat = time.RFC3339
+		run.GlobalConf.TimeFormat = time.RFC3339
 	}
-	if gc.GoMaxProcs < 0 {
-		log.Fatal("Invalid argument for --go-processes. Must be >1.")
+	if run.GlobalConf.GoMaxProcs < 0 {
+		logger.Fatal("Invalid argument for --go-processes. Must be >1.")
 	}
-	if gc.GoMaxProcs != 0 {
-		runtime.GOMAXPROCS(gc.GoMaxProcs)
+	if run.GlobalConf.GoMaxProcs != 0 {
+		runtime.GOMAXPROCS(run.GlobalConf.GoMaxProcs)
 	}
-	if gc.UDPOnly && gc.TCPOnly {
-		log.Fatal("TCP Only and UDP Only are conflicting")
+	if run.GlobalConf.UDPOnly && run.GlobalConf.TCPOnly {
+		logger.Fatal("TCP Only and UDP Only are conflicting")
 	}
-	if gc.NameServerMode && gc.AlexaFormat {
-		log.Fatal("Alexa mode is incompatible with name server mode")
+	if run.GlobalConf.NameServerMode && run.GlobalConf.AlexaFormat {
+		logger.Fatal("Alexa mode is incompatible with name server mode")
 	}
-	if gc.NameServerMode && gc.MetadataFormat {
-		log.Fatal("Metadata mode is incompatible with name server mode")
+	if run.GlobalConf.NameServerMode && run.GlobalConf.MetadataFormat {
+		logger.Fatal("Metadata mode is incompatible with name server mode")
 	}
-	if gc.NameServerMode && gc.NameOverride == "" && gc.Module != "BINDVERSION" {
-		log.Fatal("Static Name must be defined with --override-name in --name-server-mode unless DNS module does not expect names (e.g., BINDVERSION).")
+	if run.GlobalConf.NameServerMode && run.GlobalConf.NameOverride == "" && run.GlobalConf.Module != "BINDVERSION" {
+		logger.Fatal("Static Name must be defined with --override-name in --name-server-mode unless DNS module does not expect names (e.g., BINDVERSION).")
 	}
 	// Output Groups are defined by a base + any additional fields that the user wants
-	groups := strings.Split(gc.IncludeInOutput, ",")
-	if gc.ResultVerbosity != "short" && gc.ResultVerbosity != "normal" && gc.ResultVerbosity != "long" && gc.ResultVerbosity != "trace" {
-		log.Fatal("Invalid result verbosity. Options: short, normal, long, trace")
+	groups := strings.Split(run.GlobalConf.IncludeInOutput, ",")
+	if run.GlobalConf.ResultVerbosity != "short" && run.GlobalConf.ResultVerbosity != "normal" && run.GlobalConf.ResultVerbosity != "long" && run.GlobalConf.ResultVerbosity != "trace" {
+		logger.Fatal("Invalid result verbosity. Options: short, normal, long, trace")
 	}
 
-	gc.OutputGroups = append(gc.OutputGroups, gc.ResultVerbosity)
-	gc.OutputGroups = append(gc.OutputGroups, groups...)
-
-	// Seeding for RandomNameServer()
-	rand.Seed(time.Now().UnixNano())
+	run.GlobalConf.OutputGroups = append(run.GlobalConf.OutputGroups, run.GlobalConf.ResultVerbosity)
+	run.GlobalConf.OutputGroups = append(run.GlobalConf.OutputGroups, groups...)
 
 	// some modules require multiple passes over a file (this is really just the case for zone files)
-	// TODO(spencer) - enforce tracking of which modules allow STDIN
+	if !run.GlobalConf.RequestedModule.Module.AllowStdIn() && run.GlobalConf.InputFilePath == "-" {
+		logger.Fatal("Specified module does not allow reading from stdin")
+	}
 
 	// setup i/o
-	gc.InputHandler = iohandlers.NewFileInputHandler(gc.InputFilePath)
-	gc.OutputHandler = iohandlers.NewFileOutputHandler(gc.OutputFilePath)
+	run.GlobalConf.InputHandler = iohandlers.NewFileInputHandler(run.GlobalConf.InputFilePath)
+	run.GlobalConf.OutputHandler = iohandlers.NewFileOutputHandler(run.GlobalConf.OutputFilePath)
 
-	err := RunLookups(&gc)
+	err := RunLookups(&run.GlobalConf)
 
 	if err != nil {
 		logger.Fatal(err)

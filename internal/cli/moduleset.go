@@ -24,7 +24,7 @@ func (m ModuleSet) AddModule(name string, mod TypedModule) {
 	name = strings.ToUpper(name)
 
 	if _, ok := m[name]; ok {
-		logger.Warnf("module %s already exists in cli moduleset and will be overwritten.")
+		logger.Warnf("module %s already exists in cli moduleset and will be overwritten.", name)
 	}
 
 	m[name] = mod
@@ -196,10 +196,6 @@ func GenerateModSet() ModuleSet {
 		zdns.RawModule{},
 		dns.TypeNAPTR,
 	})
-	modSet.AddModule("NS", TypedModule{
-		zdns.RawModule{},
-		dns.TypeNS,
-	})
 	modSet.AddModule("NID", TypedModule{
 		zdns.RawModule{},
 		dns.TypeNID,
@@ -207,6 +203,10 @@ func GenerateModSet() ModuleSet {
 	modSet.AddModule("NINFO", TypedModule{
 		zdns.RawModule{},
 		dns.TypeNINFO,
+	})
+	modSet.AddModule("NIMLOC", TypedModule{
+		zdns.RawModule{},
+		dns.TypeNIMLOC,
 	})
 	modSet.AddModule("NSAPPTR", TypedModule{
 		zdns.RawModule{},

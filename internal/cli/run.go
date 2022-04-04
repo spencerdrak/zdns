@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -73,20 +74,34 @@ func RunLookups(c *GlobalConf) error {
 
 	client := c.RequestedModule.Module.NewLookupClient()
 
+	traced := false
+
+	// TODO(spencer): set trace verbosity
+	if c.ResultVerbosity == "trace" {
+		traced = true
+	}
+
+	nanoseconds := false
+
+	if c.TimeFormat == time.RFC3339Nano {
+		nanoseconds = true
+	}
+
 	//TODO(spencer) - populate from GlobalConf
 	clientOptions := zdns.ClientOptions{
+		// CLI will always re-use sockets
 		ReuseSockets:          true,
-		IsTraced:              true,
-		Verbosity:             3,
-		TCPOnly:               false,
-		UDPOnly:               false,
-		NsResolution:          false,
+		IsTraced:              zdns.IsTraced(traced),
+		Verbosity:             c.Verbosity,
+		TCPOnly:               c.TCPOnly,
+		UDPOnly:               c.UDPOnly,
+		NsResolution:          nanoseconds,
 		LocalAddr:             localAddr,
 		Conn:                  &conn,
-		Nameserver:            "1.1.1.1:53",
 		ModuleOptions:         map[string]string{},
-		IsInternallyRecursive: false,
-		IterativeOptions:      zdns.IterativeOptions{},
+		IsInternallyRecursive: zdns.IsInternallyRecursive(c.IterativeResolution),
+		//TODO: spencer - set options for iterative resolution
+		IterativeOptions: zdns.IterativeOptions{},
 	}
 
 	err = client.Initialize(&clientOptions)
@@ -98,6 +113,10 @@ func RunLookups(c *GlobalConf) error {
 	// create pool of worker goroutines
 	var lookupWG sync.WaitGroup
 	lookupWG.Add(c.Threads)
+
+	// Set a seed for getting a random nameserver within the runRoutineLookup method
+	rand.Seed(time.Now().UnixNano())
+
 	startTime := time.Now().Format(c.TimeFormat)
 	for i := 0; i < c.Threads; i++ {
 		go runRoutineLookup(c, inChan,
@@ -159,10 +178,10 @@ func parseMetadataInputLine(line string) (string, string) {
 	return s[0], s[1]
 }
 
-func parseNormalInputLine(line string) (string, string) {
+func parseNormalInputLine(line string, nameServers []string, numNS int) (string, string) {
 	s := strings.SplitN(line, ",", 2)
 	if len(s) == 1 {
-		return s[0], ""
+		return s[0], util.AddDefaultPortToDNSServerName(nameServers[rand.Intn(numNS)])
 	} else {
 		return s[0], util.AddDefaultPortToDNSServerName(s[1])
 	}
@@ -197,15 +216,26 @@ func runRoutineLookup(gc *GlobalConf, input <-chan interface{}, output chan<- st
 		rawName := ""
 		var rank int
 		var entryMetadata string
+		var nameServer string
 
-		// TODO(spencer): set a Type whenever this question is headed to the RAW module. Otherwise, the module should take care of this.
-		// TODO(spencer): maybe we need a different question or different handling for this on the raw side?
+		if gc.AlexaFormat {
+			rawName, rank = parseAlexa(line)
+		} else if gc.MetadataFormat {
+			rawName, entryMetadata = parseMetadataInputLine(line)
+		} else if gc.NameServerMode {
+			nameServer = util.AddDefaultPortToDNSServerName(line)
+		} else {
+			rawName, nameServer = parseNormalInputLine(line, gc.NameServers, len(gc.NameServers))
+		}
+		lookupName, changed = makeName(rawName, gc.NamePrefix, gc.NameOverride)
+
 		// TODO(spencer): timeouts
 		question := zdns.Question{
-			Name:  lookupName,
-			Id:    uuid.New(),
-			Type:  gc.RequestedModule.Type,
-			Class: gc.Class,
+			Name:       lookupName,
+			Id:         uuid.New(),
+			Type:       gc.RequestedModule.Type,
+			Class:      gc.Class,
+			NameServer: nameServer,
 		}
 
 		response, err := lc.DoLookup(question)
@@ -214,22 +244,15 @@ func runRoutineLookup(gc *GlobalConf, input <-chan interface{}, output chan<- st
 		response.Timestamp = time.Now().Format(gc.TimeFormat)
 		response.Name = rawName
 		response.Result.Class = dns.Class(gc.Class).String()
-
-		if gc.AlexaFormat == true {
-			rawName, rank = parseAlexa(line)
-			response.Result.AlexaRank = rank
-		} else if gc.MetadataFormat {
-			rawName, entryMetadata = parseMetadataInputLine(line)
-			response.Result.Metadata = entryMetadata
-			// TODO(spencer) - handle multiple nameserver mode. This may require change to the raw lib.
-		} else if gc.NameServerMode {
-			//nameServer := util.AddDefaultPortToDNSServerName(line)
-		} else {
-			//rawName, nameServer := parseNormalInputLine(line)
-		}
-		lookupName, changed = makeName(rawName, gc.NamePrefix, gc.NameOverride)
 		if changed {
 			response.Result.AlteredName = lookupName
+		}
+
+		if rank != 0 {
+			response.Result.AlexaRank = rank
+		}
+		if entryMetadata != "" {
+			response.Result.Metadata = entryMetadata
 		}
 
 		if status != zdns.STATUS_NO_OUTPUT {
@@ -242,6 +265,9 @@ func runRoutineLookup(gc *GlobalConf, input <-chan interface{}, output chan<- st
 				ApiVersion: v,
 			}
 			data, err := sheriff.Marshal(o, response)
+			if err != nil {
+				logger.Fatal("Unable to marshal JSON result", err)
+			}
 			jsonRes, err := json.Marshal(data)
 			if err != nil {
 				logger.Fatal("Unable to marshal JSON result", err)
